@@ -52,11 +52,17 @@ export const Canvas: React.FC<CanvasProps> = ({
       <div className="canvas-toolbar-top">
         <div className="canvas-zoom-indicator">Zoom: {zoomLabel}</div>
       </div>
-      <div className="canvas-view" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
+      <div
+        className="canvas-view"
+        style={{ transform: `scale(${canvasState.zoom})` }}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+      >
+        <div className="canvas-origin" />
         <div
           className="canvas-inner"
           style={{
-            transform: `scale(${canvasState.zoom}) translate(${canvasState.offsetX}px, ${canvasState.offsetY}px)`,
+            transform: `translate(${canvasState.offsetX}px, ${canvasState.offsetY}px)`,
           }}
         >
           {nodes.map((node) => (
@@ -75,6 +81,14 @@ export const Canvas: React.FC<CanvasProps> = ({
                   {node.isRoot ? 'Root' : 'Node'}
                 </span>
                 <button className="node-play-button">▶</button>
+              </div>
+              <div className="node-ports node-ports--left">
+                <div className="node-port" />
+              </div>
+              <div className="node-ports node-ports--right">
+                {Array.from({ length: node.branchCount }).map((_, index) => (
+                  <div key={index} className="node-port" />
+                ))}
               </div>
               <div className="node-body">
                 <textarea

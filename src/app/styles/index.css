@@ -111,17 +111,49 @@ body {
   position: relative;
   flex: 1;
   border-radius: 16px;
-  background: radial-gradient(circle at top, #eef2ff, #f9fafb);
+  background-color: #ffffff;
+  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.35) 1px, transparent 1px);
+  background-size: 28px 28px;
   border: 1px solid var(--border-subtle);
   overflow: hidden;
+  transform-origin: 50% 50%;
 }
 
 .canvas-inner {
   position: relative;
-  width: 2000px;
-  height: 1200px;
-  transform-origin: 0 0;
-  padding: 40px;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 50%;
+  padding: 24px;
+}
+
+.canvas-origin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+}
+
+.canvas-origin::before,
+.canvas-origin::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background-color: #111827;
+  transform: translate(-50%, -50%);
+}
+
+.canvas-origin::before {
+  width: 14px;
+  height: 2px;
+}
+
+.canvas-origin::after {
+  width: 2px;
+  height: 14px;
 }
 
 .node {
@@ -196,6 +228,31 @@ body {
   display: flex;
   justify-content: flex-end;
   font-size: 12px;
+}
+
+.node-ports {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: translateY(-50%);
+}
+
+.node-ports--left {
+  left: -10px;
+}
+
+.node-ports--right {
+  right: -10px;
+}
+
+.node-port {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background-color: #111827;
+  box-shadow: 0 0 0 2px #ffffff;
 }
 
 .node-branch-label {

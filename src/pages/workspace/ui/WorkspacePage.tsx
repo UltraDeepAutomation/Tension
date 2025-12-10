@@ -10,15 +10,49 @@ export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(true);
   const { state, actions } = useWorkspaceModel();
   const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
+  const [isZoomModifierActive, setIsZoomModifierActive] = React.useState(false);
+  const baseToolRef = React.useRef(state.canvas.tool);
+
+  React.useEffect(() => {
+    baseToolRef.current = state.canvas.tool;
+  }, [state.canvas.tool]);
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+
+      if (event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar' || event.key === 'Meta') {
+        setIsZoomModifierActive(true);
+        actions.setTool('hand');
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar' || event.key === 'Meta') {
+        setIsZoomModifierActive(false);
+        actions.setTool(baseToolRef.current === 'hand' ? 'cursor' : baseToolRef.current);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [actions]);
 
   return (
     <div className="workspace">
-      <Sidebar />
+      <Sidebar onOpenSettings={() => setIsSettingsOpen(true)} />
       <div className="workspace-main">
         <Canvas
           canvasState={state.canvas}
           nodes={state.nodes}
           onNodePositionChange={actions.updateNodePosition}
+          onChangeZoom={actions.changeZoom}
+          isZoomModifierActive={isZoomModifierActive}
         />
         <Toolbar
           tool={state.canvas.tool}
@@ -27,7 +61,6 @@ export const WorkspacePage: React.FC = () => {
           onZoomIn={() => actions.changeZoom(+0.1)}
           onZoomOut={() => actions.changeZoom(-0.1)}
           onResetZoom={actions.resetZoom}
-          onToggleSettings={() => setIsSettingsOpen((v) => !v)}
         />
         <SettingsPanel
           isOpen={isSettingsOpen}
@@ -37,6 +70,7 @@ export const WorkspacePage: React.FC = () => {
           onChangeKey={updateKey}
           model={state.settings.model}
           onChangeModel={actions.setSettingsModel}
+          onClose={() => setIsSettingsOpen(false)}
         />
       </div>
     </div>

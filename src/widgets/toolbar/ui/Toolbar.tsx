@@ -8,7 +8,6 @@ interface ToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
-  onToggleSettings: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -18,7 +17,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onZoomIn,
   onZoomOut,
   onResetZoom,
-  onToggleSettings,
 }) => {
   const zoomLabel = `${Math.round(zoom * 100)}%`;
 
@@ -30,7 +28,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         }
         onClick={() => onToolChange('cursor')}
       >
-        Курсор
+        ⌖
       </button>
       <button
         className={
@@ -38,7 +36,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         }
         onClick={() => onToolChange('hand')}
       >
-        Рука
+        ✋
       </button>
       <div className="toolbar-spacer" />
       <button className="toolbar-button" onClick={onZoomOut}>
@@ -49,10 +47,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </button>
       <button className="toolbar-button" onClick={onZoomIn}>
         +
-      </button>
-      <div className="toolbar-spacer" />
-      <button className="toolbar-button" onClick={onToggleSettings}>
-        Настройки
       </button>
     </div>
   );

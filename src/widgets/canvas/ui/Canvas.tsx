@@ -6,12 +6,16 @@ interface CanvasProps {
   canvasState: CanvasState;
   nodes: Node[];
   onNodePositionChange: (id: string, x: number, y: number) => void;
+  onChangeZoom: (delta: number) => void;
+  isZoomModifierActive: boolean;
 }
 
 export const Canvas: React.FC<CanvasProps> = ({
   canvasState,
   nodes,
   onNodePositionChange,
+  onChangeZoom,
+  isZoomModifierActive,
 }) => {
   const zoomLabel = `${Math.round(canvasState.zoom * 100)}%`;
 
@@ -47,6 +51,16 @@ export const Canvas: React.FC<CanvasProps> = ({
     dragStartRef.current = null;
   };
 
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (event.metaKey || isZoomModifierActive) {
+      event.preventDefault();
+      const delta = -event.deltaY * 0.001;
+      if (delta !== 0) {
+        onChangeZoom(delta);
+      }
+    }
+  };
+
   return (
     <main className="canvas-container">
       <div className="canvas-toolbar-top">
@@ -57,6 +71,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         style={{ transform: `scale(${canvasState.zoom})` }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
       >
         <div className="canvas-origin" />
         <div

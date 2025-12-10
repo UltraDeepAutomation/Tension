@@ -1,6 +1,10 @@
 import React from 'react';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  onOpenSettings: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings }) => {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -10,6 +14,9 @@ export const Sidebar: React.FC = () => {
       <div className="sidebar-list">
         <div className="sidebar-placeholder">Диалоги появятся здесь</div>
       </div>
+      <button className="sidebar-settings-button" onClick={onOpenSettings}>
+        Настройки
+      </button>
     </aside>
   );
 };

@@ -1,7 +1,6 @@
 import React from 'react';
 import { CanvasState, defaultCanvasState } from '@/entities/canvas/model/types';
 import { Settings } from '@/entities/settings/model/types';
-import { useOpenAIKey } from '@/features/manage-openai-key/model/useOpenAIKey';
 
 export interface WorkspaceState {
   canvas: CanvasState;
@@ -14,19 +13,20 @@ export interface WorkspaceModel {
     setTool: (tool: CanvasState['tool']) => void;
     changeZoom: (delta: number) => void;
     resetZoom: () => void;
+    setOpenAIApiKey: (key: string) => void;
     setSettingsModel: (model: string) => void;
   };
 }
 
 export function useWorkspaceModel(): WorkspaceModel {
-  const { apiKey } = useOpenAIKey();
   const [canvas, setCanvas] = React.useState<CanvasState>(defaultCanvasState);
+  const [openAIApiKey, setOpenAIApiKey] = React.useState<string>('');
   const [model, setModel] = React.useState<string>('gpt-4.1');
 
   const state: WorkspaceState = {
     canvas,
     settings: {
-      openAIApiKey: apiKey,
+      openAIApiKey,
       model,
     },
   };
@@ -56,6 +56,7 @@ export function useWorkspaceModel(): WorkspaceModel {
       setTool,
       changeZoom,
       resetZoom,
+      setOpenAIApiKey,
       setSettingsModel,
     },
   };

@@ -1,14 +1,25 @@
 import React from 'react';
+import type { CanvasState } from '@/entities/canvas/model/types';
 
-export const Canvas: React.FC = () => {
+interface CanvasProps {
+  canvasState: CanvasState;
+}
+
+export const Canvas: React.FC<CanvasProps> = ({ canvasState }) => {
+  const zoomLabel = `${Math.round(canvasState.zoom * 100)}%`;
+
   return (
     <main className="canvas-container">
       <div className="canvas-toolbar-top">
-        <div className="canvas-zoom-indicator">Zoom: 100%</div>
-        <button className="canvas-settings-button">Настройки</button>
+        <div className="canvas-zoom-indicator">Zoom: {zoomLabel}</div>
       </div>
       <div className="canvas-view">
-        <div className="canvas-inner">
+        <div
+          className="canvas-inner"
+          style={{
+            transform: `scale(${canvasState.zoom}) translate(${canvasState.offsetX}px, ${canvasState.offsetY}px)`,
+          }}
+        >
           <div className="node node--root">
             <div className="node-header">
               <span className="node-title">Root</span>

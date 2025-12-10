@@ -32,3 +32,22 @@ export async function readSetting<T = unknown>(key: string): Promise<T | undefin
   const db = await getTensionDb();
   return db.get('settings', key) as Promise<T | undefined>;
 }
+
+export async function saveNodes<T = unknown>(nodes: T[]): Promise<void> {
+  const db = await getTensionDb();
+  const tx = db.transaction('nodes', 'readwrite');
+  await tx.store.clear();
+  for (const node of nodes) {
+    // ожидается, что у node есть поле id, соответствующее keyPath стора
+    // типизация обобщённая, чтобы не тянуть доменные типы в shared слой
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await tx.store.put(node as any);
+  }
+  await tx.done;
+}
+
+export async function readNodes<T = unknown>(): Promise<T[]> {
+  const db = await getTensionDb();
+  const all = await db.getAll('nodes');
+  return all as T[];
+}

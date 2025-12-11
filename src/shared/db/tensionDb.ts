@@ -3,7 +3,7 @@ import { openDB, IDBPDatabase } from 'idb';
 export type TensionDb = IDBPDatabase<unknown>;
 
 const DB_NAME = 'tension-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export async function getTensionDb(): Promise<TensionDb> {
   return openDB(DB_NAME, DB_VERSION, {
@@ -18,6 +18,10 @@ export async function getTensionDb(): Promise<TensionDb> {
       if (!db.objectStoreNames.contains('nodes')) {
         const store = db.createObjectStore('nodes', { keyPath: 'id' });
         store.createIndex('by-threadId', 'threadId');
+      }
+
+      if (!db.objectStoreNames.contains('connections')) {
+        db.createObjectStore('connections', { keyPath: 'id' });
       }
     },
   });
@@ -49,5 +53,23 @@ export async function saveNodes<T = unknown>(nodes: T[]): Promise<void> {
 export async function readNodes<T = unknown>(): Promise<T[]> {
   const db = await getTensionDb();
   const all = await db.getAll('nodes');
+  return all as T[];
+}
+
+export async function saveConnections<T = unknown>(connections: T[]): Promise<void> {
+  const db = await getTensionDb();
+  const tx = db.transaction('connections', 'readwrite');
+  await tx.store.clear();
+  for (const connection of connections) {
+    // ожидается, что у connection есть поле id
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await tx.store.put(connection as any);
+  }
+  await tx.done;
+}
+
+export async function readConnections<T = unknown>(): Promise<T[]> {
+  const db = await getTensionDb();
+  const all = await db.getAll('connections');
   return all as T[];
 }

@@ -8,6 +8,7 @@ interface CanvasProps {
   onNodePositionChange: (id: string, x: number, y: number) => void;
   onChangeZoom: (delta: number) => void;
   isZoomModifierActive: boolean;
+  onPlayNode: (id: string) => void;
 }
 
 export const Canvas: React.FC<CanvasProps> = ({
@@ -16,6 +17,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   onNodePositionChange,
   onChangeZoom,
   isZoomModifierActive,
+  onPlayNode,
 }) => {
   const zoomLabel = `${Math.round(canvasState.zoom * 100)}%`;
 
@@ -95,7 +97,13 @@ export const Canvas: React.FC<CanvasProps> = ({
                 <span className="node-title">
                   {node.isRoot ? 'Root' : 'Node'}
                 </span>
-                <button className="node-play-button">▶</button>
+                <button
+                  className="node-play-button"
+                  type="button"
+                  onClick={() => onPlayNode(node.id)}
+                >
+                  ▶
+                </button>
               </div>
               <div className="node-ports node-ports--left">
                 <div className="node-port" />

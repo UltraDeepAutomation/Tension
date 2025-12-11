@@ -53,6 +53,9 @@ export const WorkspacePage: React.FC = () => {
           onNodePositionChange={actions.updateNodePosition}
           onChangeZoom={actions.changeZoom}
           isZoomModifierActive={isZoomModifierActive}
+          onPlayNode={(nodeId) =>
+            actions.playNode({ nodeId, apiKey, model: state.settings.model })
+          }
         />
         <Toolbar
           tool={state.canvas.tool}

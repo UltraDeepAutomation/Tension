@@ -68,6 +68,7 @@ export const WorkspacePage: React.FC = () => {
           onPlayNode={(nodeId: string) =>
             actions.playNode({ nodeId, apiKey, model: state.settings.model })
           }
+          onDeleteNode={actions.deleteNode}
         />
         <Toolbar
           tool={state.canvas.tool}
@@ -87,6 +88,8 @@ export const WorkspacePage: React.FC = () => {
           model={state.settings.model}
           onChangeModel={actions.setSettingsModel}
           onClose={() => setIsSettingsOpen(false)}
+          onExport={actions.exportChat}
+          onImport={actions.importChat}
           onClearData={() => {
             actions.clearData();
             setIsSettingsOpen(false);

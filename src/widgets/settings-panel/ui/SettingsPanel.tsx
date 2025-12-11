@@ -10,6 +10,8 @@ interface SettingsPanelProps {
   onChangeModel: (value: string) => void;
   onClose?: () => void;
   onClearData?: () => void;
+  onExport?: () => void;
+  onImport?: (file: File) => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -22,6 +24,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onChangeModel,
   onClose,
   onClearData,
+  onExport,
+  onImport,
 }) => {
   if (!isOpen) return null;
 
@@ -69,6 +73,32 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           {isLoaded && hasKey && (
             <p className="settings-hint">Ключ сохранён. Можно использовать Play в нодах.</p>
           )}
+          
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px', width: '100%' }}>
+            {onExport && (
+              <button className="settings-action-button" onClick={onExport} style={{ flex: 1 }}>
+                Export JSON
+              </button>
+            )}
+            {onImport && (
+              <label className="settings-action-button" style={{ flex: 1 }}>
+                Import JSON
+                <input
+                  type="file"
+                  accept=".json"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      onImport(file);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </label>
+            )}
+          </div>
+
           {onClearData && (
             <button
               type="button"

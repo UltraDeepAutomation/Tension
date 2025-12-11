@@ -9,6 +9,7 @@ interface NodeCardProps {
   onBranchCountChange: (count: 1 | 2 | 3 | 4) => void;
   onDeepLevelChange: (level: 1 | 2 | 3 | 4) => void;
   onPlay: () => void;
+  onDelete: () => void;
 }
 
 /** Лимиты строк для коллапсинга */
@@ -25,6 +26,7 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
   onBranchCountChange,
   onDeepLevelChange,
   onPlay,
+  onDelete,
 }) => {
   const [isContextExpanded, setIsContextExpanded] = React.useState(false);
   const [isResponseExpanded, setIsResponseExpanded] = React.useState(false);
@@ -62,6 +64,18 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
         >
           {node.isPlaying ? <span className="spinner spinner--sm" /> : '▶'}
         </button>
+        {!node.isRoot && (
+          <button
+            className="node-delete-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            title="Удалить ветку"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {/* Ports */}

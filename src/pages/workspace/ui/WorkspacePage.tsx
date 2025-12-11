@@ -45,7 +45,14 @@ export const WorkspacePage: React.FC = () => {
 
   return (
     <div className="workspace">
-      <Sidebar onOpenSettings={() => setIsSettingsOpen(true)} />
+      <Sidebar
+        chats={state.chats}
+        currentChatId={state.currentChatId}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onCreateChat={actions.createChat}
+        onSelectChat={actions.selectChat}
+        onDeleteChat={actions.deleteChat}
+      />
       <div className="workspace-main">
         <Canvas
           canvasState={state.canvas}

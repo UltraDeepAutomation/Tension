@@ -2,13 +2,29 @@ import React from 'react';
 import { CanvasState, defaultCanvasState } from '@/entities/canvas/model/types';
 import { Settings } from '@/entities/settings/model/types';
 import { Connection, Node } from '@/entities/node/model/types';
-import { readSetting, saveSetting, readNodes, saveNodes, readConnections, saveConnections } from '@/shared/db/tensionDb';
+import {
+  readSetting,
+  saveSetting,
+  readChats,
+  saveChat,
+  deleteChat,
+  readNodesByChat,
+  saveNodesByChat,
+  readConnectionsByChat,
+  saveConnectionsByChat,
+  ChatRecord,
+  // Deprecated methods for migration
+  readNodes as readNodesLegacy,
+  readConnections as readConnectionsLegacy,
+} from '@/shared/db/tensionDb';
 
 export interface WorkspaceState {
   canvas: CanvasState;
   settings: Settings;
   nodes: Node[];
   connections: Connection[];
+  chats: ChatRecord[];
+  currentChatId: string | null;
 }
 
 export interface WorkspaceModel {
@@ -27,6 +43,9 @@ export interface WorkspaceModel {
     updateNodeDeepLevel: (id: string, level: 1 | 2 | 3 | 4) => void;
     playNode: (params: { nodeId: string; apiKey: string; model: string }) => Promise<void>;
     clearData: () => void;
+    createChat: () => Promise<void>;
+    selectChat: (chatId: string) => Promise<void>;
+    deleteChat: (chatId: string) => Promise<void>;
   };
 }
 
@@ -35,76 +54,102 @@ export function useWorkspaceModel(): WorkspaceModel {
   const [model, setModel] = React.useState<string>('gpt-4.1');
   const [nodes, setNodes] = React.useState<Node[]>([]);
   const [connections, setConnections] = React.useState<Connection[]>([]);
+  const [chats, setChats] = React.useState<ChatRecord[]>([]);
+  const [currentChatId, setCurrentChatId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
 
     const bootstrap = async () => {
       try {
-        const [storedCanvas, storedModel, storedNodes, storedConnections] = await Promise.all([
+        const [storedCanvas, storedModel, storedChatId, existingChats] = await Promise.all([
           readSetting<CanvasState | undefined>('canvas_state'),
           readSetting<string | undefined>('settings_model'),
-          readNodes<Node>(),
-          readConnections<Connection>(),
+          readSetting<string | undefined>('current_chat_id'),
+          readChats(),
         ]);
 
         if (cancelled) return;
 
-        if (storedCanvas) {
-          setCanvas(storedCanvas);
-        }
+        if (storedCanvas) setCanvas(storedCanvas);
+        if (storedModel) setModel(storedModel);
 
-        if (storedModel) {
-          setModel(storedModel);
-        }
+        let activeChatId = storedChatId;
+        let chatList = existingChats;
 
-        if (storedNodes && storedNodes.length > 0) {
-          // Миграция: добавляем deepLevel для старых нод
-          const migratedNodes = storedNodes.map((node) => ({
-            ...node,
-            deepLevel: node.deepLevel ?? 1,
-            context: node.context ?? '',
-          }));
-          setNodes(migratedNodes as Node[]);
-        } else {
-          // Root-нода в центре видимой области (offset = 0,0)
-          const root: Node = {
-            id: 'root',
-            x: 100,
-            y: 100,
-            context: '',
-            modelResponse: null,
-            prompt: '',
-            branchCount: 2,
-            deepLevel: 1,
-            isRoot: true,
-            isPlaying: false,
-            inputs: [],
-            outputs: [],
+        // Если чатов нет, проверим старые данные (миграция)
+        if (chatList.length === 0) {
+          const oldNodes = await readNodesLegacy<Node>();
+          
+          const newChatId = `chat-${Date.now()}`;
+          const newChat: ChatRecord = {
+            id: newChatId,
+            title: 'New Chat',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
           };
-          setNodes([root]);
+          
+          await saveChat(newChat);
+          chatList = [newChat];
+          activeChatId = newChatId;
+
+          if (oldNodes && oldNodes.length > 0) {
+            // Мигрируем старые ноды
+            const migratedNodes = oldNodes.map((n) => ({
+              ...n,
+              chatId: newChatId,
+              deepLevel: n.deepLevel ?? 1,
+              context: n.context ?? '',
+            }));
+            await saveNodesByChat(newChatId, migratedNodes);
+            
+            const oldConnections = await readConnectionsLegacy<Connection>();
+            const migratedConnections = oldConnections.map((c) => ({
+              ...c,
+              chatId: newChatId,
+            }));
+            await saveConnectionsByChat(newChatId, migratedConnections);
+          } else {
+            // Дефолтная root-нода
+            const root: Node = {
+              id: 'root',
+              x: 100,
+              y: 100,
+              context: '',
+              modelResponse: null,
+              prompt: '',
+              branchCount: 2,
+              deepLevel: 1,
+              isRoot: true,
+              isPlaying: false,
+              inputs: [],
+              outputs: [],
+            };
+            await saveNodesByChat(newChatId, [root]);
+            await saveConnectionsByChat(newChatId, []);
+          }
         }
 
-        if (storedConnections && storedConnections.length > 0) {
-          setConnections(storedConnections);
+        if (!activeChatId || !chatList.find(c => c.id === activeChatId)) {
+          if (chatList.length > 0) {
+            activeChatId = chatList[0].id;
+          }
         }
-      } catch {
-        if (cancelled) return;
-        const rootFallback: Node = {
-          id: 'root',
-          x: 0,
-          y: 0,
-          context: '',
-          modelResponse: null,
-          prompt: '',
-          branchCount: 2,
-          deepLevel: 1,
-          isRoot: true,
-          isPlaying: false,
-          inputs: [],
-          outputs: [],
-        };
-        setNodes([rootFallback]);
+
+        setChats(chatList);
+        setCurrentChatId(activeChatId || null);
+
+        if (activeChatId) {
+          const [nodesForChat, connsForChat] = await Promise.all([
+            readNodesByChat<Node>(activeChatId),
+            readConnectionsByChat<Connection>(activeChatId),
+          ]);
+          setNodes(nodesForChat);
+          setConnections(connsForChat);
+        }
+
+      } catch (error) {
+        console.error('Bootstrap error:', error);
       }
     };
 
@@ -115,13 +160,122 @@ export function useWorkspaceModel(): WorkspaceModel {
     };
   }, []);
 
-  const state: WorkspaceState = {
-    canvas,
-    settings: {
-      model,
-    },
-    nodes,
-    connections,
+  // --- Persistence ---
+
+  React.useEffect(() => {
+    if (currentChatId) {
+      void saveSetting('current_chat_id', currentChatId);
+    }
+  }, [currentChatId]);
+
+  React.useEffect(() => {
+    if (currentChatId) {
+      void saveNodesByChat(currentChatId, nodes);
+    }
+  }, [nodes, currentChatId]);
+
+  React.useEffect(() => {
+    if (currentChatId) {
+      void saveConnectionsByChat(currentChatId, connections);
+    }
+  }, [connections, currentChatId]);
+
+  React.useEffect(() => {
+    void saveSetting('canvas_state', canvas);
+  }, [canvas]);
+
+  React.useEffect(() => {
+    void saveSetting('settings_model', model);
+  }, [model]);
+
+  // --- Actions ---
+
+  const createChat = async () => {
+    const newChatId = `chat-${Date.now()}`;
+    const newChat: ChatRecord = {
+      id: newChatId,
+      title: 'New Chat',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await saveChat(newChat);
+    
+    const root: Node = {
+      id: 'root',
+      x: 100,
+      y: 100,
+      context: '',
+      modelResponse: null,
+      prompt: '',
+      branchCount: 2,
+      deepLevel: 1,
+      isRoot: true,
+      isPlaying: false,
+      inputs: [],
+      outputs: [],
+    };
+    
+    await saveNodesByChat(newChatId, [root]);
+    await saveConnectionsByChat(newChatId, []);
+
+    setChats(prev => [newChat, ...prev]);
+    setCurrentChatId(newChatId);
+    setNodes([root]);
+    setConnections([]);
+    setCanvas(defaultCanvasState);
+  };
+
+  const selectChat = async (chatId: string) => {
+    if (chatId === currentChatId) return;
+    
+    setCurrentChatId(chatId);
+    
+    const [nodesForChat, connsForChat] = await Promise.all([
+      readNodesByChat<Node>(chatId),
+      readConnectionsByChat<Connection>(chatId),
+    ]);
+    
+    setNodes(nodesForChat);
+    setConnections(connsForChat);
+    setCanvas(defaultCanvasState);
+  };
+
+  const deleteChatAction = async (chatId: string) => {
+    await deleteChat(chatId);
+    setChats(prev => prev.filter(c => c.id !== chatId));
+    
+    if (currentChatId === chatId) {
+      const remaining = chats.filter(c => c.id !== chatId);
+      if (remaining.length > 0) {
+        // Выбираем следующий (или первый)
+        selectChat(remaining[0].id);
+      } else {
+        // Создаем новый, если удалили последний
+        createChat();
+      }
+    }
+  };
+
+  const clearData = () => {
+    if (!currentChatId) return;
+    const root: Node = {
+      id: 'root',
+      x: 100,
+      y: 100,
+      context: '',
+      modelResponse: null,
+      prompt: '',
+      branchCount: 2,
+      deepLevel: 1,
+      isRoot: true,
+      isPlaying: false,
+      inputs: [],
+      outputs: [],
+    };
+    setNodes([root]);
+    setConnections([]);
+    setCanvas(defaultCanvasState);
   };
 
   const setTool = (tool: CanvasState['tool']) => {
@@ -181,26 +335,6 @@ export function useWorkspaceModel(): WorkspaceModel {
       offsetX: Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, prev.offsetX + dx)),
       offsetY: Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, prev.offsetY + dy)),
     }));
-  };
-
-  const clearData = () => {
-    const root: Node = {
-      id: 'root',
-      x: 100,
-      y: 100,
-      context: '',
-      modelResponse: null,
-      prompt: '',
-      branchCount: 2,
-      deepLevel: 1,
-      isRoot: true,
-      isPlaying: false,
-      inputs: [],
-      outputs: [],
-    };
-    setNodes([root]);
-    setConnections([]);
-    setCanvas(defaultCanvasState);
   };
 
   const setSettingsModel = (next: string) => {
@@ -392,21 +526,16 @@ export function useWorkspaceModel(): WorkspaceModel {
     }
   };
 
-  React.useEffect(() => {
-    void saveSetting('canvas_state', canvas);
-  }, [canvas]);
-
-  React.useEffect(() => {
-    void saveSetting('settings_model', model);
-  }, [model]);
-
-  React.useEffect(() => {
-    void saveNodes(nodes);
-  }, [nodes]);
-
-  React.useEffect(() => {
-    void saveConnections(connections);
-  }, [connections]);
+  const state: WorkspaceState = {
+    canvas,
+    settings: {
+      model,
+    },
+    nodes,
+    connections,
+    chats,
+    currentChatId,
+  };
 
   return {
     state,
@@ -424,6 +553,9 @@ export function useWorkspaceModel(): WorkspaceModel {
       updateNodeDeepLevel,
       playNode,
       clearData,
+      createChat,
+      selectChat,
+      deleteChat: deleteChatAction,
     },
   };
 }

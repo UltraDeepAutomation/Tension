@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Node, ProviderId } from '@/entities/node/model/types';
-import { Play, Loader2, Users } from 'lucide-react';
+import { Play, Loader2, Users, GitBranch } from 'lucide-react';
+import { MarkdownRenderer } from '@/shared/ui/MarkdownRenderer';
 
 /** Иконки и цвета для провайдеров */
 const PROVIDER_STYLES: Record<ProviderId, { icon: string; color: string; name: string }> = {
@@ -12,6 +13,20 @@ const PROVIDER_STYLES: Record<ProviderId, { icon: string; color: string; name: s
   ollama: { icon: '🦙', color: '#0ea5e9', name: 'Ollama' },
 };
 
+/** Доступные модели для выбора */
+export const AVAILABLE_MODELS: { id: string; name: string; providerId: ProviderId }[] = [
+  { id: 'gpt-4.1', name: 'GPT-4.1', providerId: 'openai' },
+  { id: 'gpt-4o', name: 'GPT-4o', providerId: 'openai' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', providerId: 'openai' },
+  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', providerId: 'anthropic' },
+  { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', providerId: 'anthropic' },
+  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', providerId: 'google' },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', providerId: 'google' },
+  { id: 'grok-2', name: 'Grok 2', providerId: 'xai' },
+  { id: 'llama3.2', name: 'Llama 3.2', providerId: 'ollama' },
+  { id: 'mistral', name: 'Mistral', providerId: 'ollama' },
+];
+
 interface NodeCardProps {
   node: Node;
   isDragging: boolean;
@@ -22,8 +37,10 @@ interface NodeCardProps {
   onPromptChange: (prompt: string) => void;
   onBranchCountChange: (count: 1 | 2 | 3 | 4) => void;
   onDeepLevelChange: (level: 1 | 2 | 3 | 4) => void;
+  onModelChange?: (modelId: string, providerId: ProviderId) => void;
   onPlay: () => void;
   onPlayCouncil?: () => void;
+  onPlayMultiModel?: () => void;
   onClick?: (e: React.MouseEvent) => void;
 }
 
@@ -43,8 +60,10 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
   onPromptChange,
   onBranchCountChange,
   onDeepLevelChange,
+  onModelChange,
   onPlay,
   onPlayCouncil,
+  onPlayMultiModel,
   onClick,
 }) => {
   const [isContextExpanded, setIsContextExpanded] = React.useState(false);
@@ -142,6 +161,21 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
             <Play size={14} />
           )}
         </button>
+        {/* Multi-Model Button */}
+        {onPlayMultiModel && !councilMode && (
+          <button
+            className="node-multimodel-button"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlayMultiModel();
+            }}
+            disabled={node.isPlaying}
+            title="Multi-Model: запустить на разных моделях"
+          >
+            <GitBranch size={14} />
+          </button>
+        )}
       </div>
 
       {/* Ports */}
@@ -194,8 +228,10 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
                 <span className="spinner" />
                 <span>Модель думает...</span>
               </div>
+            ) : node.modelResponse ? (
+              <MarkdownRenderer content={node.modelResponse} />
             ) : (
-              node.modelResponse || <span className="node-placeholder">Ответ модели появится здесь</span>
+              <span className="node-placeholder">Ответ модели появится здесь</span>
             )}
           </div>
           {node.modelResponse && showResponseExpand && (
@@ -266,6 +302,30 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
             <option value={4}>4</option>
           </select>
         </label>
+        
+        {/* Model Selector */}
+        {onModelChange && (
+          <label className="node-model-label">
+            <select
+              className="node-model-select"
+              value={node.modelId || 'gpt-4.1'}
+              onChange={(e) => {
+                e.stopPropagation();
+                const model = AVAILABLE_MODELS.find(m => m.id === e.target.value);
+                if (model) {
+                  onModelChange(model.id, model.providerId);
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {AVAILABLE_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {PROVIDER_STYLES[model.providerId].icon} {model.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
     </div>
   );

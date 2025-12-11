@@ -13,18 +13,22 @@ interface CanvasProps {
   onNodePromptChange: (id: string, prompt: string) => void;
   onNodeBranchCountChange: (id: string, count: 1 | 2 | 3 | 4) => void;
   onNodeDeepLevelChange: (id: string, level: 1 | 2 | 3 | 4) => void;
+  onNodeModelChange: (id: string, modelId: string, providerId: import('@/entities/node/model/types').ProviderId) => void;
   onCanvasPan: (dx: number, dy: number) => void;
   onZoomAtPoint: (delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => void;
   isZoomModifierActive: boolean;
   onPlayNode: (id: string) => void;
   onDeleteNode: (id: string) => void;
   onDuplicateNode: (id: string) => void;
+  onCopyNodes: (nodeIds: string[]) => void;
+  onPasteNodes: () => void;
   onCenterCanvas: () => void;
   onResetZoom: () => void;
   // Council mode
   councilMode?: boolean;
   councilName?: string;
   onPlayCouncil?: (nodeId: string) => void;
+  onPlayMultiModel?: (nodeId: string) => void;
 }
 
 export const Canvas: React.FC<CanvasProps> = ({
@@ -35,30 +39,37 @@ export const Canvas: React.FC<CanvasProps> = ({
   onNodePromptChange,
   onNodeBranchCountChange,
   onNodeDeepLevelChange,
+  onNodeModelChange,
   onCanvasPan,
   onZoomAtPoint,
   isZoomModifierActive,
   onPlayNode,
   onDeleteNode,
   onDuplicateNode,
+  onCopyNodes,
+  onPasteNodes,
   onCenterCanvas,
   onResetZoom,
   councilMode = false,
   councilName,
   onPlayCouncil,
+  onPlayMultiModel,
 }) => {
   const canvasRef = React.useRef<HTMLDivElement>(null);
 
   // Драг ноды
   const [draggingNodeId, setDraggingNodeId] = React.useState<string | null>(null);
+  // Точка старта курсора при начале драга
   const nodeDragLastPos = React.useRef<{ x: number; y: number } | null>(null);
+  // Позиции всех перетаскиваемых нод на момент начала драга
+  const dragStartPositionsRef = React.useRef<Map<string, { x: number; y: number }> | null>(null);
 
   // Драг канваса (pan)
   const [isPanning, setIsPanning] = React.useState(false);
   const panLastPos = React.useRef<{ x: number; y: number } | null>(null);
 
-  // Выделенная нода
-  const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
+  // Multi-select: Set of selected node IDs
+  const [selectedNodeIds, setSelectedNodeIds] = React.useState<Set<string>>(new Set());
 
   // Context Menu
   const [contextMenu, setContextMenu] = React.useState<{
@@ -68,29 +79,130 @@ export const Canvas: React.FC<CanvasProps> = ({
     targetId?: string;
   } | null>(null);
 
-  // Keyboard handler for Delete
+  // Selection helpers
+  const selectNode = React.useCallback((nodeId: string, addToSelection: boolean) => {
+    setSelectedNodeIds(prev => {
+      if (addToSelection) {
+        // Toggle selection for Shift+Click
+        const next = new Set(prev);
+        if (next.has(nodeId)) {
+          next.delete(nodeId);
+        } else {
+          next.add(nodeId);
+        }
+        return next;
+      } else {
+        // Single selection
+        return new Set([nodeId]);
+      }
+    });
+  }, []);
+
+  const clearSelection = React.useCallback(() => {
+    setSelectedNodeIds(new Set());
+  }, []);
+
+  const selectAll = React.useCallback(() => {
+    setSelectedNodeIds(new Set(nodes.map(n => n.id)));
+  }, [nodes]);
+
+  // Keyboard handler for Delete, Escape, Select All
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Не обрабатывать если фокус в input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      // Delete/Backspace — удалить выделенные ноды
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Не удалять если фокус в input/textarea
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-        
-        if (selectedNodeId) {
+        if (selectedNodeIds.size > 0) {
           e.preventDefault();
-          onDeleteNode(selectedNodeId);
-          setSelectedNodeId(null);
+          // Delete all selected nodes
+          selectedNodeIds.forEach(nodeId => {
+            onDeleteNode(nodeId);
+          });
+          clearSelection();
         }
       }
+      
       // Escape — снять выделение
       if (e.key === 'Escape') {
-        setSelectedNodeId(null);
+        clearSelection();
+      }
+
+      // Cmd/Ctrl+A — выделить все
+      if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+        e.preventDefault();
+        selectAll();
+      }
+
+      // Cmd/Ctrl+C — копировать выделенные ноды
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+        if (selectedNodeIds.size > 0) {
+          e.preventDefault();
+          onCopyNodes(Array.from(selectedNodeIds));
+        }
+      }
+
+      // Cmd/Ctrl+V — вставить ноды
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+        e.preventDefault();
+        onPasteNodes();
+      }
+
+      // Tab — navigate between nodes
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (nodes.length === 0) return;
+        
+        const currentIds = Array.from(selectedNodeIds);
+        const lastSelectedId = currentIds[currentIds.length - 1];
+        const currentIndex = lastSelectedId 
+          ? nodes.findIndex(n => n.id === lastSelectedId)
+          : -1;
+        
+        let nextIndex: number;
+        if (e.shiftKey) {
+          // Shift+Tab — previous node
+          nextIndex = currentIndex <= 0 ? nodes.length - 1 : currentIndex - 1;
+        } else {
+          // Tab — next node
+          nextIndex = currentIndex >= nodes.length - 1 ? 0 : currentIndex + 1;
+        }
+        
+        const nextNode = nodes[nextIndex];
+        if (nextNode) {
+          selectNode(nextNode.id, false);
+        }
+      }
+
+      // Arrow keys — move selected nodes
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        if (selectedNodeIds.size > 0) {
+          e.preventDefault();
+          const step = e.shiftKey ? 50 : 10; // Shift for larger steps
+          let dx = 0, dy = 0;
+          
+          switch (e.key) {
+            case 'ArrowUp': dy = -step; break;
+            case 'ArrowDown': dy = step; break;
+            case 'ArrowLeft': dx = -step; break;
+            case 'ArrowRight': dx = step; break;
+          }
+          
+          selectedNodeIds.forEach(nodeId => {
+            const node = nodes.find(n => n.id === nodeId);
+            if (node) {
+              onNodePositionChange(nodeId, node.x + dx, node.y + dy, false);
+            }
+          });
+        }
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, onDeleteNode]);
+  }, [selectedNodeIds, onDeleteNode, clearSelection, selectAll, nodes, selectNode, onNodePositionChange, onCopyNodes, onPasteNodes]);
 
   const handleContextMenu = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -138,9 +250,33 @@ export const Canvas: React.FC<CanvasProps> = ({
   ) => {
     event.preventDefault();
     event.stopPropagation();
+
+    // Запоминаем стартовую позицию курсора (в экранных координатах)
     nodeDragLastPos.current = { x: event.clientX, y: event.clientY };
+
+    // Определяем, какие ноды двигаем: либо вся текущая мульти-выделенная группа,
+    // либо только эту ноду, если она не была выделена
+    const affectedIds = selectedNodeIds.has(node.id)
+      ? Array.from(selectedNodeIds)
+      : [node.id];
+
+    const startPositions = new Map<string, { x: number; y: number }>();
+    affectedIds.forEach((id) => {
+      const found = nodes.find((n) => n.id === id);
+      if (found) {
+        startPositions.set(id, { x: found.x, y: found.y });
+      }
+    });
+    dragStartPositionsRef.current = startPositions;
+
     setDraggingNodeId(node.id);
-  }, []);
+    
+    // If dragging a non-selected node, select only it
+    // If dragging a selected node, keep the selection for group drag
+    if (!selectedNodeIds.has(node.id)) {
+      setSelectedNodeIds(new Set([node.id]));
+    }
+  }, [nodes, selectedNodeIds]);
 
   const handleCanvasMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -151,7 +287,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     if (isCanvas) {
       // Снять выделение при клике на пустое место
-      setSelectedNodeId(null);
+      clearSelection();
       
       // In hand mode OR when clicking empty canvas, allow panning
       // In cursor mode, only pan if clicking on empty canvas (not nodes)
@@ -195,20 +331,19 @@ export const Canvas: React.FC<CanvasProps> = ({
     if (!draggingNodeId && !isPanning) return;
 
     const handleWindowMouseMove = (event: MouseEvent) => {
-      // 1. Drag Node
-      if (draggingNodeId && nodeDragLastPos.current) {
+      // 1. Drag Node(s) - supports multi-select group drag
+      if (draggingNodeId && nodeDragLastPos.current && dragStartPositionsRef.current) {
         event.preventDefault();
-        const { x: lastX, y: lastY } = nodeDragLastPos.current;
-        const dx = (event.clientX - lastX) / canvasState.zoom;
-        const dy = (event.clientY - lastY) / canvasState.zoom;
 
-        nodeDragLastPos.current = { x: event.clientX, y: event.clientY };
-        
-        // Use nodeMap for O(1) lookup
-        const node = nodeMap.get(draggingNodeId);
-        if (node) {
-          onNodePositionChange(draggingNodeId, node.x + dx, node.y + dy, true);
-        }
+        // Считаем смещение относительно точки начала драга в мировых координатах
+        const { x: startMouseX, y: startMouseY } = nodeDragLastPos.current;
+        const dx = (event.clientX - startMouseX) / canvasState.zoom;
+        const dy = (event.clientY - startMouseY) / canvasState.zoom;
+
+        // Двигаем все ноды относительно сохранённых стартовых позиций
+        dragStartPositionsRef.current.forEach((startPos, nodeId) => {
+          onNodePositionChange(nodeId, startPos.x + dx, startPos.y + dy, true);
+        });
       }
 
       // 2. Pan Canvas
@@ -225,14 +360,15 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     const handleWindowMouseUp = () => {
       if (draggingNodeId) {
-        // Commit the final position to history
+        // Commit the final position to history (берём актуальные координаты из nodeMap)
         const node = nodeMap.get(draggingNodeId);
         if (node) {
-           onNodePositionChange(draggingNodeId, node.x, node.y, false);
+          onNodePositionChange(draggingNodeId, node.x, node.y, false);
         }
       }
       setDraggingNodeId(null);
       nodeDragLastPos.current = null;
+      dragStartPositionsRef.current = null;
       setIsPanning(false);
       panLastPos.current = null;
     };
@@ -244,7 +380,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
-  }, [draggingNodeId, isPanning, canvasState.zoom, nodeMap, onNodePositionChange, onCanvasPan]);
+  }, [draggingNodeId, isPanning, canvasState.zoom, nodeMap, onNodePositionChange, onCanvasPan, selectedNodeIds]);
 
 
   // Wheel handling
@@ -337,18 +473,20 @@ export const Canvas: React.FC<CanvasProps> = ({
               key={node.id}
               node={node}
               isDragging={draggingNodeId === node.id}
-              isSelected={selectedNodeId === node.id}
+              isSelected={selectedNodeIds.has(node.id)}
               councilMode={councilMode}
               councilName={councilName}
               onHeaderMouseDown={(e) => handleNodeHeaderMouseDown(e, node)}
               onPromptChange={(prompt) => onNodePromptChange(node.id, prompt)}
               onBranchCountChange={(count) => onNodeBranchCountChange(node.id, count)}
               onDeepLevelChange={(level) => onNodeDeepLevelChange(node.id, level)}
+              onModelChange={(modelId, providerId) => onNodeModelChange(node.id, modelId, providerId)}
               onPlay={() => onPlayNode(node.id)}
               onPlayCouncil={onPlayCouncil ? () => onPlayCouncil(node.id) : undefined}
+              onPlayMultiModel={onPlayMultiModel ? () => onPlayMultiModel(node.id) : undefined}
               onClick={(e) => {
                 e.stopPropagation();
-                setSelectedNodeId(node.id);
+                selectNode(node.id, e.shiftKey);
               }}
             />
           ))}

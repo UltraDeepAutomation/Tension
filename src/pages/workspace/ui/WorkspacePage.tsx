@@ -8,13 +8,20 @@ import { useOpenAIKey } from '@/features/manage-openai-key/model/useOpenAIKey';
 import { CommandPalette, CommandAction } from '@/widgets/command-palette/ui/CommandPalette';
 import { Minimap } from '@/widgets/minimap/ui/Minimap';
 import { CouncilPanel } from '@/widgets/council-panel';
+import { SearchPanel } from '@/widgets/search-panel';
+import { ChatPanel, type ChatMessage, type ThinkingStep } from '@/widgets/chat-panel';
 import { getCouncilById } from '@/shared/lib/council';
-import { Loader2, Users } from 'lucide-react';
+import { Loader2, Users, MessageSquare } from 'lucide-react';
 
 export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
   const [isCmdKOpen, setIsCmdKOpen] = React.useState(false);
   const [isCouncilPanelOpen, setIsCouncilPanelOpen] = React.useState(false);
+  const [isSearchOpen, setIsSearchOpen] = React.useState(false);
+  const [isChatPanelOpen, setIsChatPanelOpen] = React.useState(false);
+  const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([]);
+  const [thinkingSteps, setThinkingSteps] = React.useState<ThinkingStep[]>([]);
+  const [isChatThinking, setIsChatThinking] = React.useState(false);
   const { state, actions } = useWorkspaceModel();
   const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
   
@@ -40,6 +47,13 @@ export const WorkspacePage: React.FC = () => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
         event.preventDefault();
         setIsCmdKOpen((prev) => !prev);
+        return;
+      }
+
+      // Cmd+F for search
+      if ((event.metaKey || event.ctrlKey) && event.key === 'f') {
+        event.preventDefault();
+        setIsSearchOpen((prev) => !prev);
         return;
       }
 
@@ -125,15 +139,59 @@ export const WorkspacePage: React.FC = () => {
   // Compute if zoom modifier is active (Cmd/Ctrl held for zoom)
   const isZoomModifierActive = isMetaPressed;
 
+  // Navigate to a specific node (center it in view)
+  const navigateToNode = React.useCallback((nodeId: string) => {
+    const node = state.nodes.find(n => n.id === nodeId);
+    if (node) {
+      // Center the canvas on this node
+      actions.centerOnNode(nodeId);
+    }
+  }, [state.nodes, actions]);
+
+  // Select a node (for search results)
+  const selectNodeById = React.useCallback((nodeId: string) => {
+    // This will be handled by Canvas internally via a ref or state lift
+    // For now, we just navigate to it
+  }, []);
+
+  // Handle chat message send
+  const handleChatSend = React.useCallback(async (message: string) => {
+    // Add user message
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now(),
+    };
+    setChatMessages(prev => [...prev, userMessage]);
+    setIsChatThinking(true);
+    
+    // TODO: Integrate with Council Engine for real responses
+    // For now, simulate a response
+    setTimeout(() => {
+      const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Получено сообщение: "${message}"\n\nCouncil обрабатывает запрос...`,
+        timestamp: Date.now(),
+        agentName: 'Council',
+      };
+      setChatMessages(prev => [...prev, assistantMessage]);
+      setIsChatThinking(false);
+    }, 1500);
+  }, []);
+
   const commandActions: CommandAction[] = React.useMemo(() => [
     { id: 'new-chat', label: 'Create New Chat', perform: actions.createChat, icon: '➕' },
     { id: 'undo', label: 'Undo', perform: actions.undo, icon: '↩️', shortcut: ['⌘', 'Z'] },
     { id: 'redo', label: 'Redo', perform: actions.redo, icon: '↪️', shortcut: ['⌘', '⇧', 'Z'] },
     { id: 'export', label: 'Export Chat to JSON', perform: actions.exportChat, icon: '📤' },
     { id: 'fit-view', label: 'Fit View', perform: actions.centerCanvas, icon: '⤢' },
+    { id: 'auto-layout', label: 'Auto-Layout Graph', perform: actions.autoLayout, icon: '📐' },
     { id: 'zoom-in', label: 'Zoom In', perform: () => actions.changeZoom(0.1), icon: '🔍' },
     { id: 'zoom-out', label: 'Zoom Out', perform: () => actions.changeZoom(-0.1), icon: '🔍' },
     { id: 'reset-zoom', label: 'Reset Zoom', perform: actions.resetZoom, icon: '0' },
+    { id: 'search', label: 'Search Nodes', perform: () => setIsSearchOpen(true), icon: '🔎', shortcut: ['⌘', 'F'] },
     { id: 'settings', label: 'Open Settings', perform: () => setIsSettingsOpen(true), icon: '⚙️' },
   ], [actions]);
 
@@ -143,6 +201,13 @@ export const WorkspacePage: React.FC = () => {
         isOpen={isCmdKOpen}
         onClose={() => setIsCmdKOpen(false)}
         actions={commandActions}
+      />
+      <SearchPanel
+        nodes={state.nodes}
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onNavigateToNode={navigateToNode}
+        onSelectNode={selectNodeById}
       />
       <Sidebar
         chats={state.chats}
@@ -166,6 +231,7 @@ export const WorkspacePage: React.FC = () => {
           onNodePromptChange={actions.updateNodePrompt}
           onNodeBranchCountChange={actions.updateNodeBranchCount}
           onNodeDeepLevelChange={actions.updateNodeDeepLevel}
+          onNodeModelChange={actions.updateNodeModel}
           onCanvasPan={actions.panCanvas}
           onZoomAtPoint={actions.zoomAtPoint}
           isZoomModifierActive={isZoomModifierActive}
@@ -174,11 +240,72 @@ export const WorkspacePage: React.FC = () => {
           }
           onDeleteNode={actions.deleteNode}
           onDuplicateNode={actions.duplicateNode}
+          onCopyNodes={actions.copyNodes}
+          onPasteNodes={actions.pasteNodes}
           onCenterCanvas={actions.centerCanvas}
           onResetZoom={actions.resetZoom}
           councilMode={!!state.selectedCouncilId}
           councilName={state.selectedCouncilId ? getCouncilById(state.selectedCouncilId)?.name : undefined}
-          onPlayCouncil={state.selectedCouncilId ? (nodeId) => actions.playCouncil({ nodeId, councilId: state.selectedCouncilId! }) : undefined}
+          onPlayCouncil={state.selectedCouncilId ? (nodeId) => {
+            const node = state.nodes.find((n) => n.id === nodeId);
+            const prompt = node?.prompt || node?.context || '';
+
+            // Open chat panel and reset thinking history
+            setIsChatPanelOpen(true);
+            setThinkingSteps([]);
+
+            if (prompt.trim()) {
+              const userMessage: ChatMessage = {
+                id: crypto.randomUUID(),
+                role: 'user',
+                content: prompt,
+                timestamp: Date.now(),
+                nodeId,
+              };
+              setChatMessages((prev) => [...prev, userMessage]);
+            }
+
+            setIsChatThinking(true);
+
+            actions
+              .playCouncil({
+                nodeId,
+                councilId: state.selectedCouncilId!,
+                onThinkingStep: (step) => {
+                  // Append thinking step to sidebar
+                  setThinkingSteps((prev) => [...prev, step]);
+
+                  // When synthesis is ready, add final answer as chat message
+                  if (step.stage === 'synthesis') {
+                    const assistantMessage: ChatMessage = {
+                      id: crypto.randomUUID(),
+                      role: 'assistant',
+                      content: step.output,
+                      timestamp: step.timestamp,
+                      agentName: step.agentName,
+                      providerId: step.providerId,
+                      modelId: step.modelId,
+                      nodeId,
+                    };
+                    setChatMessages((prev) => [...prev, assistantMessage]);
+                    setIsChatThinking(false);
+                  }
+                },
+              })
+              .catch((error) => {
+                console.error('playCouncil error', error);
+                setIsChatThinking(false);
+              });
+          } : undefined}
+          onPlayMultiModel={(nodeId) => {
+            // Default models for multi-model branching
+            const defaultModels = [
+              { modelId: 'gpt-4.1', providerId: 'openai' as const },
+              { modelId: 'claude-3-5-sonnet-20241022', providerId: 'anthropic' as const },
+              { modelId: 'gemini-1.5-pro', providerId: 'google' as const },
+            ];
+            actions.playMultiModel({ nodeId, models: defaultModels });
+          }}
         />
         <Toolbar
           tool={state.canvas.tool}
@@ -259,6 +386,26 @@ export const WorkspacePage: React.FC = () => {
             </span>
           )}
         </button>
+        
+        {/* Chat Panel Toggle Button */}
+        <button
+          className={`chat-toggle-button ${isChatPanelOpen ? 'chat-toggle-button--active' : ''}`}
+          onClick={() => setIsChatPanelOpen(!isChatPanelOpen)}
+          title="Открыть чат с Council"
+        >
+          <MessageSquare size={18} />
+        </button>
+        
+        {/* Chat Panel */}
+        <ChatPanel
+          isOpen={isChatPanelOpen}
+          onClose={() => setIsChatPanelOpen(false)}
+          messages={chatMessages}
+          thinkingSteps={thinkingSteps}
+          onSendMessage={handleChatSend}
+          onNavigateToNode={navigateToNode}
+          isThinking={isChatThinking}
+        />
       </div>
     </div>
   );

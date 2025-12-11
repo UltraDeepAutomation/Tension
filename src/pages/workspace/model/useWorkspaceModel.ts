@@ -29,6 +29,7 @@ import { useToast } from '@/shared/lib/contexts/ToastContext';
 import { getLLMGateway, type ProviderConfig, type ProviderId } from '@/shared/lib/llm';
 import { getCouncilEngine, getCouncilById, PRESET_COUNCILS } from '@/shared/lib/council';
 import type { Council, CouncilResult } from '@/entities/council';
+import { autoLayoutNodes, arrangeInGrid } from '@/shared/lib/autoLayout';
 
 export interface WorkspaceState {
   canvas: CanvasState;
@@ -54,12 +55,14 @@ export interface WorkspaceModel {
     zoomAtPoint: (delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => void;
     resetZoom: () => void;
     centerCanvas: () => void;
+    centerOnNode: (nodeId: string) => void;
     panCanvas: (dx: number, dy: number) => void;
     setSettingsModel: (model: string) => void;
     updateNodePosition: (id: string, x: number, y: number, isTransient?: boolean) => void;
     updateNodePrompt: (id: string, prompt: string) => void;
     updateNodeBranchCount: (id: string, count: 1 | 2 | 3 | 4) => void;
     updateNodeDeepLevel: (id: string, level: 1 | 2 | 3 | 4) => void;
+    updateNodeModel: (id: string, modelId: string, providerId: ProviderId) => void;
     playNode: (params: { nodeId: string; apiKey: string; model: string }) => Promise<void>;
     clearData: () => void;
     createChat: () => Promise<void>;
@@ -67,6 +70,10 @@ export interface WorkspaceModel {
     deleteChat: (chatId: string) => Promise<void>;
     deleteNode: (nodeId: string) => void;
     duplicateNode: (nodeId: string) => void;
+    copyNodes: (nodeIds: string[]) => void;
+    pasteNodes: () => void;
+    autoLayout: () => void;
+    arrangeSelectedInGrid: (nodeIds: string[]) => void;
     exportChat: () => void;
     importChat: (file: File) => Promise<void>;
     undo: () => void;
@@ -75,7 +82,8 @@ export interface WorkspaceModel {
     updateProvider: (config: ProviderConfig) => void;
     testProvider: (providerId: ProviderId) => Promise<boolean>;
     selectCouncil: (councilId: string | null) => void;
-    playCouncil: (params: { nodeId: string; councilId: string }) => Promise<void>;
+    playCouncil: (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void }) => Promise<void>;
+    playMultiModel: (params: { nodeId: string; models: { modelId: string; providerId: ProviderId }[] }) => Promise<void>;
   };
 }
 
@@ -86,6 +94,20 @@ interface ImportData {
   nodes: Node[];
   connections: Connection[];
   canvas?: CanvasState;
+}
+
+/** Шаг размышления Council для отображения в Chat Panel */
+export interface CouncilThinkingStep {
+  id: string;
+  stage: 'divergence' | 'convergence' | 'synthesis';
+  agentId: string;
+  agentName: string;
+  providerId: ProviderId;
+  modelId: string;
+  input: string;
+  output: string;
+  timestamp: number;
+  duration?: number;
 }
 
 /** OpenAI API response type */
@@ -127,6 +149,9 @@ export function useWorkspaceModel(): WorkspaceModel {
   // LLM Gateway instance
   const gateway = React.useMemo(() => getLLMGateway(), []);
   const councilEngine = React.useMemo(() => getCouncilEngine(), []);
+  
+  // Clipboard for copy/paste (must be at top level for hooks rules)
+  const clipboardRef = React.useRef<{ nodes: Node[]; connections: Connection[] } | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -312,6 +337,13 @@ export function useWorkspaceModel(): WorkspaceModel {
     setGraph((prev) => ({
       ...prev,
       nodes: prev.nodes.map((node) => (node.id === id ? { ...node, deepLevel: level } : node)),
+    }));
+  }, [setGraph]);
+
+  const updateNodeModel = useCallback((id: string, modelId: string, providerId: ProviderId) => {
+    setGraph((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => (node.id === id ? { ...node, modelId, providerId } : node)),
     }));
   }, [setGraph]);
 
@@ -565,7 +597,7 @@ export function useWorkspaceModel(): WorkspaceModel {
     }
   }, [setGraph, showToast]);
 
-  const playNode = useCallback(async ({ nodeId, apiKey, model: modelName }: { nodeId: string; apiKey: string; model: string }) => {
+  const playNode = useCallback(async ({ nodeId, apiKey, model: defaultModel }: { nodeId: string; apiKey: string; model: string }) => {
     // Get source node data from current state
     const source = graph.nodes.find((n) => n.id === nodeId);
     if (!source || !apiKey) return;
@@ -573,6 +605,9 @@ export function useWorkspaceModel(): WorkspaceModel {
       showToast('Введите промпт перед запуском', 'error');
       return;
     }
+
+    // Use node's model if set, otherwise use default
+    const modelToUse = source.modelId || defaultModel;
 
     await executeNodeRecursive(
       nodeId,
@@ -582,7 +617,7 @@ export function useWorkspaceModel(): WorkspaceModel {
       source.x,
       source.y,
       apiKey,
-      modelName
+      modelToUse
     );
   }, [graph.nodes, executeNodeRecursive, showToast]);
 
@@ -639,6 +674,108 @@ export function useWorkspaceModel(): WorkspaceModel {
       };
     });
   }, [setGraph]);
+
+  const copyNodes = useCallback((nodeIds: string[]) => {
+    if (nodeIds.length === 0) return;
+    
+    const nodesToCopy = graph.nodes.filter(n => nodeIds.includes(n.id));
+    const nodeIdSet = new Set(nodeIds);
+    
+    // Copy connections between selected nodes
+    const connectionsToCopy = graph.connections.filter(
+      c => nodeIdSet.has(c.fromNodeId) && nodeIdSet.has(c.toNodeId)
+    );
+    
+    clipboardRef.current = {
+      nodes: nodesToCopy,
+      connections: connectionsToCopy,
+    };
+    
+    showToast(`Скопировано ${nodesToCopy.length} нод`, 'success');
+  }, [graph.nodes, graph.connections, showToast]);
+
+  const pasteNodes = useCallback(() => {
+    if (!clipboardRef.current || clipboardRef.current.nodes.length === 0) {
+      showToast('Буфер обмена пуст', 'error');
+      return;
+    }
+    
+    const { nodes: copiedNodes, connections: copiedConnections } = clipboardRef.current;
+    
+    // Create ID mapping for new nodes
+    const idMap = new Map<string, string>();
+    const offset = 100; // Offset for pasted nodes
+    
+    const newNodes: Node[] = copiedNodes.map(node => {
+      const newId = crypto.randomUUID();
+      idMap.set(node.id, newId);
+      return {
+        ...node,
+        id: newId,
+        x: node.x + offset,
+        y: node.y + offset,
+        isRoot: false,
+        isPlaying: false,
+      };
+    });
+    
+    // Remap connections to new node IDs
+    const newConnections: Connection[] = copiedConnections.map(conn => ({
+      ...conn,
+      id: crypto.randomUUID(),
+      fromNodeId: idMap.get(conn.fromNodeId) || conn.fromNodeId,
+      toNodeId: idMap.get(conn.toNodeId) || conn.toNodeId,
+    }));
+    
+    setGraph(prev => ({
+      ...prev,
+      nodes: [...prev.nodes, ...newNodes],
+      connections: [...prev.connections, ...newConnections],
+    }));
+    
+    showToast(`Вставлено ${newNodes.length} нод`, 'success');
+  }, [setGraph, showToast]);
+
+  // Auto-layout all nodes in tree structure
+  const autoLayout = useCallback(() => {
+    if (graph.nodes.length === 0) return;
+    
+    const result = autoLayoutNodes(graph.nodes, graph.connections, {
+      nodeWidth: NODE_WIDTH,
+      nodeHeight: NODE_HEIGHT,
+      horizontalGap: NODE_GAP_X,
+      verticalGap: NODE_GAP_Y,
+    });
+    
+    setGraph(prev => ({
+      ...prev,
+      nodes: result.nodes,
+    }));
+    
+    showToast('Граф автоматически организован', 'success');
+  }, [graph.nodes, graph.connections, setGraph, showToast]);
+
+  // Arrange selected nodes in grid
+  const arrangeSelectedInGrid = useCallback((nodeIds: string[]) => {
+    if (nodeIds.length === 0) return;
+    
+    const selectedNodes = graph.nodes.filter(n => nodeIds.includes(n.id));
+    const arrangedNodes = arrangeInGrid(selectedNodes, {
+      nodeWidth: NODE_WIDTH,
+      nodeHeight: NODE_HEIGHT,
+      horizontalGap: NODE_GAP_X,
+      verticalGap: NODE_GAP_Y,
+    });
+    
+    const arrangedMap = new Map(arrangedNodes.map(n => [n.id, n]));
+    
+    setGraph(prev => ({
+      ...prev,
+      nodes: prev.nodes.map(n => arrangedMap.get(n.id) || n),
+    }));
+    
+    showToast(`${arrangedNodes.length} нод организовано в сетку`, 'success');
+  }, [graph.nodes, setGraph, showToast]);
 
   const exportChat = useCallback(() => {
     if (!currentChatId) return;
@@ -735,6 +872,25 @@ export function useWorkspaceModel(): WorkspaceModel {
     }));
   }, [graph.nodes]);
 
+  // Center canvas on a specific node
+  const centerOnNode = useCallback((nodeId: string) => {
+    const node = graph.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
+    const viewportW = window.innerWidth - SIDEBAR_WIDTH - SIDEBAR_PADDING;
+    const viewportH = window.innerHeight - 100;
+    
+    // Center the node in the viewport
+    const nodeCenterX = node.x + NODE_WIDTH / 2;
+    const nodeCenterY = node.y + NODE_HEIGHT / 2;
+    
+    setCanvas(prev => ({
+      ...prev,
+      offsetX: (viewportW / 2) / prev.zoom - nodeCenterX,
+      offsetY: (viewportH / 2) / prev.zoom - nodeCenterY,
+    }));
+  }, [graph.nodes]);
+
   // Provider management
   const updateProvider = useCallback((config: ProviderConfig) => {
     setProviders(prev => {
@@ -763,8 +919,8 @@ export function useWorkspaceModel(): WorkspaceModel {
   }, []);
   
   // Council execution
-  const playCouncil = useCallback(async (params: { nodeId: string; councilId: string }) => {
-    const { nodeId, councilId } = params;
+  const playCouncil = useCallback(async (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void }) => {
+    const { nodeId, councilId, onThinkingStep } = params;
     const council = getCouncilById(councilId);
     if (!council) {
       showToast('Council not found', 'error');
@@ -790,10 +946,72 @@ export function useWorkspaceModel(): WorkspaceModel {
     
     try {
       const result = await councilEngine.execute(council, prompt, (progress) => {
-        // Could update UI with progress here
+        // Could update UI with progress here (hooked into Chat Panel via onThinkingStep)
         console.log(`Council ${progress.stageName}: ${progress.progress}%`);
       });
-      
+
+      // Emit thinking steps to UI if requested
+      if (onThinkingStep) {
+        const steps: CouncilThinkingStep[] = [];
+        let timestamp = Date.now();
+
+        // Stage 1: divergence — ответы всех членов совета
+        result.stage1.responses.forEach((response, index) => {
+          const member = council.members[index];
+          steps.push({
+            id: crypto.randomUUID(),
+            stage: 'divergence',
+            agentId: member?.modelId ?? `member-${index}`,
+            agentName: member?.modelId ?? `Model ${index + 1}`,
+            providerId: member?.provider ?? response.provider,
+            modelId: response.modelId,
+            input: prompt,
+            output: response.error ? `⚠️ ${response.error}` : response.content,
+            timestamp,
+            duration: response.latencyMs,
+          });
+          timestamp += 10;
+        });
+
+        // Stage 2: convergence — агрегированный рейтинг ответов
+        if (result.stage2 && result.stage2.scores?.length) {
+          const bestIndex = result.stage2.aggregatedRanking[0] ?? 0;
+          const bestResponse = result.stage1.responses[bestIndex];
+          const scoresText = result.stage2.scores
+            .map((score, i) => `- ${result.stage1.responses[i].modelId}: ${score}/100`)
+            .join('\n');
+
+          steps.push({
+            id: crypto.randomUUID(),
+            stage: 'convergence',
+            agentId: 'evaluators',
+            agentName: 'Evaluators',
+            providerId: council.members[0]?.provider ?? result.stage1.responses[0]?.provider,
+            modelId: bestResponse?.modelId ?? 'multi',
+            input: 'Оценка и ранжирование ответов экспертов',
+            output: `Лучший ответ: ${bestResponse?.modelId ?? 'N/A'}\nСогласие: ${result.stage2.agreementScore}%\n\nОценки:\n${scoresText}`,
+            timestamp,
+          });
+          timestamp += 10;
+        }
+
+        // Stage 3: synthesis — финальный ответ председателя
+        steps.push({
+          id: crypto.randomUUID(),
+          stage: 'synthesis',
+          agentId: council.chairman.modelId,
+          agentName: 'Chairman',
+          providerId: council.chairman.provider,
+          modelId: council.chairman.modelId,
+          input: 'Синтез ответов и оценок',
+          output: result.stage3.finalResponse,
+          timestamp,
+          duration: result.stage3.latencyMs,
+        });
+
+        steps.forEach((step) => onThinkingStep(step));
+      }
+
       // Update node with council result
       setGraph(prev => ({
         ...prev,
@@ -821,6 +1039,122 @@ export function useWorkspaceModel(): WorkspaceModel {
     }
   }, [graph.nodes, councilEngine, setGraph, showToast]);
 
+  // Multi-model branching: each branch uses a different model
+  const playMultiModel = useCallback(async (params: { 
+    nodeId: string; 
+    models: { modelId: string; providerId: ProviderId }[] 
+  }) => {
+    const { nodeId, models } = params;
+    const source = graph.nodes.find(n => n.id === nodeId);
+    if (!source) return;
+    
+    const prompt = source.prompt || source.context;
+    if (!prompt.trim()) {
+      showToast('Введите запрос', 'error');
+      return;
+    }
+    
+    // Create child nodes for each model
+    const childNodes: Node[] = models.map((model, index) => {
+      const angle = (index / models.length) * Math.PI - Math.PI / 2;
+      const radius = 400;
+      const x = source.x + Math.cos(angle) * radius;
+      const y = source.y + NODE_HEIGHT + 100 + Math.sin(angle) * radius * 0.5;
+      
+      return {
+        id: crypto.randomUUID(),
+        x,
+        y,
+        context: prompt,
+        modelResponse: null,
+        prompt: '',
+        branchCount: 1 as const,
+        deepLevel: 1 as const,
+        isRoot: false,
+        isPlaying: true,
+        inputs: [{ id: crypto.randomUUID(), nodeId: '', type: 'input' as const, dataType: 'text' as const, index: 0 }],
+        outputs: [{ id: crypto.randomUUID(), nodeId: '', type: 'output' as const, dataType: 'text' as const, index: 0 }],
+        modelId: model.modelId,
+        providerId: model.providerId,
+        type: 'standard' as const,
+      };
+    });
+    
+    // Update node IDs in ports
+    childNodes.forEach(node => {
+      node.inputs[0].nodeId = node.id;
+      node.outputs[0].nodeId = node.id;
+    });
+    
+    // Create connections from source to children
+    const newConnections: Connection[] = childNodes.map(child => ({
+      id: crypto.randomUUID(),
+      fromNodeId: source.id,
+      fromPortIndex: 0,
+      toNodeId: child.id,
+      toPortIndex: 0,
+    }));
+    
+    // Add nodes and connections
+    setGraph(prev => ({
+      ...prev,
+      nodes: [...prev.nodes, ...childNodes],
+      connections: [...prev.connections, ...newConnections],
+    }));
+    
+    // Execute each model in parallel
+    const results = await Promise.allSettled(
+      childNodes.map(async (child) => {
+        try {
+          // Get API key for the provider
+          const provider = providers.find(p => p.id === child.providerId);
+          if (!provider?.apiKey) {
+            throw new Error(`No API key for ${child.providerId}`);
+          }
+          
+          const response = await gateway.query({
+            model: child.modelId!,
+            messages: [{ role: 'user' as const, content: prompt }],
+          });
+          
+          if (response.error) {
+            throw new Error(response.error);
+          }
+          
+          return { nodeId: child.id, response: response.content };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Error';
+          return { nodeId: child.id, error: errorMessage };
+        }
+      })
+    );
+    
+    // Update nodes with results
+    setGraph(prev => ({
+      ...prev,
+      nodes: prev.nodes.map(node => {
+        const result = results.find((r, i) => 
+          r.status === 'fulfilled' && childNodes[i].id === node.id
+        );
+        
+        if (result && result.status === 'fulfilled') {
+          const value = result.value as { nodeId: string; response?: string; error?: string };
+          if (value.nodeId === node.id) {
+            return {
+              ...node,
+              isPlaying: false,
+              modelResponse: value.response || `⚠️ ${value.error}`,
+              error: value.error,
+            };
+          }
+        }
+        return node;
+      }),
+    }));
+    
+    showToast(`Multi-model: ${models.length} ответов получено`, 'success');
+  }, [graph.nodes, providers, gateway, setGraph, showToast]);
+
   const state: WorkspaceState = {
     canvas,
     settings: { model },
@@ -844,12 +1178,14 @@ export function useWorkspaceModel(): WorkspaceModel {
       zoomAtPoint,
       resetZoom,
       centerCanvas,
+      centerOnNode,
       panCanvas,
       setSettingsModel,
       updateNodePosition,
       updateNodePrompt,
       updateNodeBranchCount,
       updateNodeDeepLevel,
+      updateNodeModel,
       playNode,
       clearData,
       createChat,
@@ -857,6 +1193,10 @@ export function useWorkspaceModel(): WorkspaceModel {
       deleteChat: deleteChatAction,
       deleteNode,
       duplicateNode,
+      copyNodes,
+      pasteNodes,
+      autoLayout,
+      arrangeSelectedInGrid,
       exportChat,
       importChat,
       undo,
@@ -866,6 +1206,7 @@ export function useWorkspaceModel(): WorkspaceModel {
       testProvider,
       selectCouncil,
       playCouncil,
+      playMultiModel,
     },
   };
 }

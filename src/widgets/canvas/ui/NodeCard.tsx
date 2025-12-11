@@ -1,5 +1,7 @@
 import React from 'react';
 import type { Node } from '@/entities/node/model/types';
+import { IconPlay, IconX, IconZap, IconLayers, IconGrid } from '@/shared/ui/Icons';
+import { Select } from '@/shared/ui/Select';
 
 interface NodeCardProps {
   node: Node;
@@ -63,7 +65,7 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
           }}
           disabled={node.isPlaying}
         >
-          {node.isPlaying ? <span className="spinner spinner--sm" /> : <IconPlay width={14} height={14} fill="currentColor" />}
+          {node.isPlaying ? <span className="spinner spinner--sm" /> : '▶'}
         </button>
         {!node.isRoot && (
           <button
@@ -74,7 +76,7 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
             }}
             title="Удалить ветку"
           >
-            <IconX width={16} height={16} />
+            ×
           </button>
         )}
       </div>
@@ -125,8 +127,8 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
           >
             {node.isPlaying ? (
               <div className="node-response-loading">
-                <IconZap width={16} height={16} className="icon-pulse" />
-                <span>Генерирую ответ...</span>
+                <span className="spinner" />
+                <span>Модель думает...</span>
               </div>
             ) : (
               node.modelResponse || <span className="node-placeholder">Ответ модели появится здесь</span>
@@ -175,32 +177,30 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
       {/* Footer */}
       <div className="node-footer">
         <label className="node-branch-label">
-          <IconLayers width={14} height={14} className="node-footer-icon" />
-          <span>Ветки:</span>
-          <Select
+          Ветки:
+          <select
             value={node.branchCount}
-            options={[
-              { value: 1, label: '1' },
-              { value: 2, label: '2' },
-              { value: 3, label: '3' },
-              { value: 4, label: '4' },
-            ]}
-            onChange={(val) => onBranchCountChange(val as 1 | 2 | 3 | 4)}
-          />
+            onChange={(e) => onBranchCountChange(Number(e.target.value) as 1 | 2 | 3 | 4)}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={4}>4</option>
+          </select>
         </label>
         <label className="node-branch-label">
-          <IconGrid width={14} height={14} className="node-footer-icon" />
-          <span>Deep:</span>
-          <Select
+          Deep:
+          <select
             value={node.deepLevel}
-            options={[
-              { value: 1, label: '1' },
-              { value: 2, label: '2' },
-              { value: 3, label: '3' },
-              { value: 4, label: '4' },
-            ]}
-            onChange={(val) => onDeepLevelChange(val as 1 | 2 | 3 | 4)}
-          />
+            onChange={(e) => onDeepLevelChange(Number(e.target.value) as 1 | 2 | 3 | 4)}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={4}>4</option>
+          </select>
         </label>
       </div>
     </div>

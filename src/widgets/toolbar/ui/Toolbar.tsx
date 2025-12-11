@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ToolMode } from '@/entities/canvas/model/types';
+import { IconCursor, IconHand, IconTarget, IconPlus, IconMinus } from '@/shared/ui/Icons';
 
 interface ToolbarProps {
   tool: ToolMode;
@@ -29,32 +30,30 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           'toolbar-button' + (tool === 'cursor' ? ' toolbar-button--active' : '')
         }
         onClick={() => onToolChange('cursor')}
-        title="Cursor (V)"
       >
-        <IconCursor width={18} height={18} />
+        ⌖
       </button>
       <button
         className={
           'toolbar-button' + (tool === 'hand' ? ' toolbar-button--active' : '')
         }
         onClick={() => onToolChange('hand')}
-        title="Hand (H)"
       >
-        <IconHand width={18} height={18} />
+        ✋
       </button>
       <div className="toolbar-spacer" />
-      <button className="toolbar-button" onClick={onZoomOut} title="Zoom Out (-)">
-        <IconMinus width={18} height={18} />
+      <button className="toolbar-button" onClick={onZoomOut}>
+        -
       </button>
-      <button className="toolbar-button" onClick={onResetZoom} title="Reset Zoom">
+      <button className="toolbar-button" onClick={onResetZoom}>
         {zoomLabel}
       </button>
-      <button className="toolbar-button" onClick={onZoomIn} title="Zoom In (+)">
-        <IconPlus width={18} height={18} />
+      <button className="toolbar-button" onClick={onZoomIn}>
+        +
       </button>
       <div className="toolbar-spacer" />
-      <button className="toolbar-button" onClick={onCenterCanvas} title="Fit to View">
-        <IconTarget width={18} height={18} />
+      <button className="toolbar-button" onClick={onCenterCanvas} title="Центрировать">
+        ⌂
       </button>
     </div>
   );

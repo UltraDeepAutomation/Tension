@@ -47,6 +47,7 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
 
   return (
     <div
+      data-node-id={node.id}
       className={`node ${node.isRoot ? 'node--root' : ''} ${isDragging ? 'node--dragging' : ''} ${node.isPlaying ? 'node--loading' : ''} ${hasError ? 'node--error' : ''}`}
       style={{ left: node.x, top: node.y }}
     >

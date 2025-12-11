@@ -2,6 +2,7 @@ import React from 'react';
 import type { CanvasState } from '@/entities/canvas/model/types';
 import type { Node, Connection } from '@/entities/node/model/types';
 import { NodeCard } from './NodeCard';
+import { ContextMenu, ContextMenuItem } from '@/widgets/context-menu/ui/ContextMenu';
 import { NODE_WIDTH, NODE_HEIGHT, PORT_SIZE, PORT_GAP, PORTS_TOP, PORT_Y_OFFSET } from '@/shared/config/constants';
 
 interface CanvasProps {
@@ -17,6 +18,8 @@ interface CanvasProps {
   isZoomModifierActive: boolean;
   onPlayNode: (id: string) => void;
   onDeleteNode: (id: string) => void;
+  onCenterCanvas: () => void;
+  onResetZoom: () => void;
 }
 
 export const Canvas: React.FC<CanvasProps> = ({
@@ -32,6 +35,8 @@ export const Canvas: React.FC<CanvasProps> = ({
   isZoomModifierActive,
   onPlayNode,
   onDeleteNode,
+  onCenterCanvas,
+  onResetZoom,
 }) => {
   const zoomLabel = `${Math.round(canvasState.zoom * 100)}%`;
   const canvasRef = React.useRef<HTMLDivElement>(null);
@@ -43,6 +48,42 @@ export const Canvas: React.FC<CanvasProps> = ({
   // Драг канваса (pan)
   const [isPanning, setIsPanning] = React.useState(false);
   const panLastPos = React.useRef<{ x: number; y: number } | null>(null);
+
+  // Context Menu
+  const [contextMenu, setContextMenu] = React.useState<{
+    x: number;
+    y: number;
+    type: 'canvas' | 'node';
+    targetId?: string;
+  } | null>(null);
+
+  const handleContextMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    const nodeEl = (event.target as HTMLElement).closest('.node');
+    if (nodeEl) {
+      const nodeId = nodeEl.getAttribute('data-node-id');
+      if (nodeId) {
+        setContextMenu({ x: event.clientX, y: event.clientY, type: 'node', targetId: nodeId });
+        return;
+      }
+    }
+    setContextMenu({ x: event.clientX, y: event.clientY, type: 'canvas' });
+  };
+
+  const contextMenuItems: ContextMenuItem[] = React.useMemo(() => {
+    if (!contextMenu) return [];
+    if (contextMenu.type === 'node' && contextMenu.targetId) {
+      const id = contextMenu.targetId;
+      return [
+        { label: 'Generate Response', icon: '▶', onClick: () => onPlayNode(id) },
+        { label: 'Delete Node', icon: '×', danger: true, onClick: () => onDeleteNode(id) },
+      ];
+    }
+    return [
+      { label: 'Fit View', icon: '⤢', onClick: onCenterCanvas },
+      { label: 'Reset Zoom', icon: '0', onClick: onResetZoom },
+    ];
+  }, [contextMenu, onPlayNode, onDeleteNode, onCenterCanvas, onResetZoom]);
 
   // --- Handlers (Memoized) ---
 
@@ -206,7 +247,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   }, [nodes, connections]);
 
   return (
-    <main className="canvas-container">
+    <main className="canvas-container" onContextMenu={handleContextMenu}>
       <div className="canvas-toolbar-top">
         <div className="canvas-zoom-indicator">Zoom: {zoomLabel}</div>
       </div>
@@ -235,22 +276,6 @@ export const Canvas: React.FC<CanvasProps> = ({
               node={node}
               isDragging={draggingNodeId === node.id}
               onHeaderMouseDown={(e) => handleNodeHeaderMouseDown(e, node)}
-              // Pass stable handlers using closure wrapper inside NodeCard or pass ID
-              // To make React.memo work, we need to pass (id, val) OR make a wrapper component
-              // But NodeCard expects (val) => void.
-              // We create an inline arrow function: (val) => handlePromptChange(node.id, val)
-              // This STILL creates a new function reference every render :(
-              // To truly fix this, NodeCard should accept `nodeId` and `onChange(id, val)`
-              // OR we accept that handlers are new, but `node` object is stable?
-              // No, if any prop changes, memo breaks.
-              // So we MUST refactor NodeCard to accept `onPromptChange` that takes ID, OR
-              // we can't fully optimize without refactoring NodeCard props.
-              // For now, I will keep inline arrows but acknowledge the limitation.
-              // WAIT! We can use a trick: `onPromptChange={useCallback((val) => handlePromptChange(node.id, val), [node.id])}`
-              // But hooks inside loop are forbidden.
-              // The only way is to refactor NodeCard to take generic handlers.
-              // Let's stick to the current props for now, as refactoring NodeCard signature requires changing types too.
-              // But I will clean up the rest.
               onPromptChange={(prompt) => onNodePromptChange(node.id, prompt)}
               onBranchCountChange={(count) => onNodeBranchCountChange(node.id, count)}
               onDeepLevelChange={(level) => onNodeDeepLevelChange(node.id, level)}
@@ -260,6 +285,14 @@ export const Canvas: React.FC<CanvasProps> = ({
           ))}
         </div>
       </div>
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </main>
   );
 };

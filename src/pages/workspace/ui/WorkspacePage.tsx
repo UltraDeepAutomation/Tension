@@ -114,6 +114,11 @@ export const WorkspacePage: React.FC = () => {
           onZoomOut={() => actions.changeZoom(-0.1)}
           onResetZoom={actions.resetZoom}
           onCenterCanvas={actions.centerCanvas}
+          onUndo={actions.undo}
+          onRedo={actions.redo}
+          canUndo={state.canUndo}
+          canRedo={state.canRedo}
+          saveStatus={state.isSaving ? 'saving' : 'saved'}
         />
         <Minimap
           nodes={state.nodes}

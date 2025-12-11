@@ -1,6 +1,7 @@
 import React from 'react';
 import { Select } from '@/shared/ui/Select';
-import { IconLayers, IconGrid, IconZap } from '@/shared/ui/Icons'; // Using existing icons, might need import or upload more
+import { useTheme } from '@/shared/lib/contexts/ThemeContext';
+import { Sun, Moon } from 'lucide-react';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -29,6 +30,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onExport,
   onImport,
 }) => {
+  const { theme, setTheme } = useTheme();
+  
   if (!isOpen) return null;
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -47,6 +50,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           )}
         </div>
         <div className="settings-body">
+          {/* Theme Toggle */}
+          <div className="settings-field">
+            <span>Тема оформления</span>
+            <div className="settings-theme-toggle">
+              <button
+                className={`settings-theme-button ${theme === 'light' ? 'settings-theme-button--active' : ''}`}
+                onClick={() => setTheme('light')}
+              >
+                <Sun size={16} />
+                <span>Светлая</span>
+              </button>
+              <button
+                className={`settings-theme-button ${theme === 'dark' ? 'settings-theme-button--active' : ''}`}
+                onClick={() => setTheme('dark')}
+              >
+                <Moon size={16} />
+                <span>Тёмная</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-divider" />
+
           <label className="settings-field">
             <span>OpenAI API Key</span>
             <input
@@ -67,7 +93,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
                 { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
                 { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
-                { value: 'gpt-4.1', label: 'GPT-4.1 (Preview)' }, // Keep user's custom value just in case
+                { value: 'gpt-4.1', label: 'GPT-4.1 (Preview)' },
               ]}
               className="settings-select"
             />
@@ -77,18 +103,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </p>
           {!isLoaded && <p className="settings-hint">Загрузка настроек…</p>}
           {isLoaded && hasKey && (
-            <p className="settings-hint">Ключ сохранён. Можно использовать Play в нодах.</p>
+            <p className="settings-hint settings-hint--success">✓ Ключ сохранён</p>
           )}
+          
+          <div className="settings-divider" />
           
           <div className="settings-actions-row">
             {onExport && (
-              <button className="settings-action-button settings-action-item" onClick={onExport}>
-                <span style={{ marginRight: 6 }}>📤</span> Export JSON
+              <button className="settings-action-button" onClick={onExport}>
+                📤 Export
               </button>
             )}
             {onImport && (
-              <label className="settings-action-button settings-action-item">
-                <span style={{ marginRight: 6 }}>📥</span> Import JSON
+              <label className="settings-action-button">
+                📥 Import
                 <input
                   type="file"
                   accept=".json"
@@ -111,7 +139,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               className="settings-clear-button"
               onClick={onClearData}
             >
-              Сбросить все ноды
+              Сбросить все данные
             </button>
           )}
         </div>

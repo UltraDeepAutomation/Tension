@@ -1,12 +1,20 @@
-export const NODE_WIDTH = 340;
-export const NODE_HEIGHT = 180;
+// Node dimensions (must match CSS tokens)
+export const NODE_WIDTH = 420;   // --node-width
+export const NODE_HEIGHT = 160;  // --node-min-height
 export const PORT_SIZE = 8;
 export const PORT_GAP = 6;
 export const PORTS_TOP = 50;
 export const PORT_Y_OFFSET = 1;
-export const NODE_GAP_X = 120;
-export const NODE_GAP_Y = 80;
+export const NODE_GAP_X = 120;   // --node-gap-x
+export const NODE_GAP_Y = 50;    // --node-gap-y
 
+// Zoom settings
 export const ZOOM_MIN = 0.25;
 export const ZOOM_MAX = 2.0;
 export const ZOOM_STEP = 0.1;
+
+// Canvas UI positioning (must match CSS tokens)
+export const CANVAS_UI_INSET = 20;  // --canvas-ui-inset
+
+// Response line limits
+export const RESPONSE_LINES_COLLAPSED = 10;  // --node-response-lines-collapsed

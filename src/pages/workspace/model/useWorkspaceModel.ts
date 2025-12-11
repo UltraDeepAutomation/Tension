@@ -46,6 +46,7 @@ export interface WorkspaceModel {
     selectChat: (chatId: string) => Promise<void>;
     deleteChat: (chatId: string) => Promise<void>;
     deleteNode: (nodeId: string) => void;
+    duplicateNode: (nodeId: string) => void;
     exportChat: () => void;
     importChat: (file: File) => Promise<void>;
   };
@@ -442,6 +443,25 @@ export function useWorkspaceModel(): WorkspaceModel {
     ));
   };
 
+  const duplicateNode = (nodeId: string) => {
+    const nodeToDuplicate = nodes.find((n) => n.id === nodeId);
+    if (!nodeToDuplicate) return;
+
+    const newNode: Node = {
+      ...nodeToDuplicate,
+      id: crypto.randomUUID(),
+      x: nodeToDuplicate.x + 50,
+      y: nodeToDuplicate.y + 50,
+      isRoot: false, // Duplicates are never root
+      isPlaying: false,
+      modelResponse: nodeToDuplicate.modelResponse,
+      context: nodeToDuplicate.context,
+      prompt: nodeToDuplicate.prompt,
+    };
+
+    setNodes((prev) => [...prev, newNode]);
+  };
+
   const exportChat = () => {
     if (!currentChatId) return;
     const data = {
@@ -567,7 +587,9 @@ export function useWorkspaceModel(): WorkspaceModel {
       selectChat,
       deleteChat: deleteChatAction,
       deleteNode,
+      duplicateNode,
       exportChat,
+      importChat,
       importChat,
     },
   };

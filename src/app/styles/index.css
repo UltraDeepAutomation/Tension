@@ -693,7 +693,171 @@ body {
   border-radius: 4px;
 }
 
-/* Command Palette */
+/* Styles for new Icons and Components */
+
+/* Sidebar Updates */
+.sidebar-new-thread {
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #f9fafb, #eef2ff);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-primary);
+  transition: all 0.2s;
+}
+
+.sidebar-new-thread:hover {
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+  border-color: #c7d2fe;
+}
+
+.sidebar-settings-button {
+  margin-top: 12px;
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  padding: 8px 16px;
+  background: #f9fafb;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-main);
+  transition: all 0.2s;
+}
+
+.sidebar-settings-button:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.sidebar-item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-item-icon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.sidebar-item--active .sidebar-item-icon {
+  color: var(--color-primary);
+}
+
+/* Custom Select */
+.custom-select {
+  position: relative;
+  display: inline-block;
+  min-width: 50px;
+  font-family: inherit;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 8px;
+  background: white;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  transition: all 0.2s;
+  min-height: 24px;
+}
+
+.custom-select-trigger:hover {
+  border-color: var(--color-primary);
+}
+
+.custom-select--open .custom-select-trigger {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft);
+}
+
+.custom-select-arrow {
+  color: var(--color-text-muted);
+  transition: transform 0.2s;
+}
+
+.custom-select--open .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: absolute;
+  bottom: 100%; /* Show above */
+  left: 0;
+  width: 100%;
+  min-width: max-content;
+  background: white;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  margin-bottom: 4px;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.custom-select-option {
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 4px;
+  color: var(--color-text-primary);
+  transition: background 0.1s;
+}
+
+.custom-select-option:hover {
+  background: var(--color-bg-muted);
+}
+
+.custom-select-option--selected {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+}
+
+/* Node Footer Icons */
+.node-footer-icon {
+  color: var(--color-text-muted);
+  margin-right: -2px;
+}
+
+.icon-pulse {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* Toolbar Icon Fixes */
+.toolbar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; /* Fixed width for icon buttons */
+  height: 32px;
+  padding: 0;
+}
+
+/* Overwrite existing sidebar-settings-button styles if needed by appending or ensuring specificity */
+
 .command-palette-overlay {
   position: fixed;
   inset: 0;

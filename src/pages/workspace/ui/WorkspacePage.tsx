@@ -93,6 +93,7 @@ export const WorkspacePage: React.FC = () => {
             actions.playNode({ nodeId, apiKey, model: state.settings.model })
           }
           onDeleteNode={actions.deleteNode}
+          onDuplicateNode={actions.duplicateNode}
         />
         <Toolbar
           tool={state.canvas.tool}

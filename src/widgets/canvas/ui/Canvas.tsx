@@ -18,6 +18,7 @@ interface CanvasProps {
   isZoomModifierActive: boolean;
   onPlayNode: (id: string) => void;
   onDeleteNode: (id: string) => void;
+  onDuplicateNode: (id: string) => void;
   onCenterCanvas: () => void;
   onResetZoom: () => void;
 }
@@ -35,6 +36,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   isZoomModifierActive,
   onPlayNode,
   onDeleteNode,
+  onDuplicateNode,
   onCenterCanvas,
   onResetZoom,
 }) => {
@@ -75,8 +77,18 @@ export const Canvas: React.FC<CanvasProps> = ({
     if (contextMenu.type === 'node' && contextMenu.targetId) {
       const id = contextMenu.targetId;
       return [
+        {
+          label: 'Дублировать',
+          icon: '⎘', 
+          onClick: () => onDuplicateNode(id),
+        },
+        {
+          label: 'Удалить',
+          icon: '×',
+          onClick: () => onDeleteNode(id),
+          danger: true,
+        },
         { label: 'Generate Response', icon: '▶', onClick: () => onPlayNode(id) },
-        { label: 'Delete Node', icon: '×', danger: true, onClick: () => onDeleteNode(id) },
       ];
     }
     return [

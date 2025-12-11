@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ChatRecord } from '@/shared/db/tensionDb';
+import { IconPlus, IconSettings, IconMessage, IconX } from '@/shared/ui/Icons';
 
 interface SidebarProps {
   chats: ChatRecord[];
@@ -28,7 +29,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isSaving && <span className="saving-badge">Saving...</span>}
         </div>
         <button className="sidebar-new-thread" onClick={onCreateChat}>
-          + Новый диалог
+          <IconPlus width={14} height={14} />
+          <span>Новый диалог</span>
         </button>
       </div>
       <div className="sidebar-list">
@@ -42,7 +44,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => onSelectChat(chat.id)}
             >
               <div className="sidebar-item-content">
-                <div className="sidebar-item-title">{chat.title}</div>
+                <div className="sidebar-item-title-row">
+                    <IconMessage width={14} height={14} className="sidebar-item-icon" />
+                    <div className="sidebar-item-title">{chat.title}</div>
+                </div>
                 <div className="sidebar-item-date">
                   {new Date(chat.updatedAt).toLocaleString()}
                 </div>
@@ -55,14 +60,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }}
                 title="Удалить"
               >
-                ×
+                <IconX width={14} height={14} />
               </button>
             </div>
           ))
         )}
       </div>
       <button className="sidebar-settings-button" onClick={onOpenSettings}>
-        Настройки
+        <IconSettings width={14} height={14} />
+        <span>Настройки</span>
       </button>
     </aside>
   );

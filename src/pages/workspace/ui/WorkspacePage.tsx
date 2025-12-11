@@ -54,6 +54,7 @@ export const WorkspacePage: React.FC = () => {
           onNodePositionChange={actions.updateNodePosition}
           onNodePromptChange={actions.updateNodePrompt}
           onNodeBranchCountChange={actions.updateNodeBranchCount}
+          onNodeDeepLevelChange={actions.updateNodeDeepLevel}
           onCanvasPan={actions.panCanvas}
           onZoomAtPoint={actions.zoomAtPoint}
           isZoomModifierActive={isZoomModifierActive}
@@ -68,6 +69,7 @@ export const WorkspacePage: React.FC = () => {
           onZoomIn={() => actions.changeZoom(+0.1)}
           onZoomOut={() => actions.changeZoom(-0.1)}
           onResetZoom={actions.resetZoom}
+          onCenterCanvas={actions.centerCanvas}
         />
         <SettingsPanel
           isOpen={isSettingsOpen}

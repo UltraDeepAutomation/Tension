@@ -8,6 +8,7 @@ interface ToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
+  onCenterCanvas: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -17,6 +18,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onZoomIn,
   onZoomOut,
   onResetZoom,
+  onCenterCanvas,
 }) => {
   const zoomLabel = `${Math.round(zoom * 100)}%`;
 
@@ -47,6 +49,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </button>
       <button className="toolbar-button" onClick={onZoomIn}>
         +
+      </button>
+      <div className="toolbar-spacer" />
+      <button className="toolbar-button" onClick={onCenterCanvas} title="Центрировать">
+        ⌂
       </button>
     </div>
   );

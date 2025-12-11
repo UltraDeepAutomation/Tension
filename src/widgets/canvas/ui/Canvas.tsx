@@ -1,6 +1,7 @@
 import React from 'react';
 import type { CanvasState } from '@/entities/canvas/model/types';
 import type { Node, Connection } from '@/entities/node/model/types';
+import { NodeCard } from './NodeCard';
 
 interface CanvasProps {
   canvasState: CanvasState;
@@ -9,6 +10,7 @@ interface CanvasProps {
   onNodePositionChange: (id: string, x: number, y: number) => void;
   onNodePromptChange: (id: string, prompt: string) => void;
   onNodeBranchCountChange: (id: string, count: 1 | 2 | 3 | 4) => void;
+  onNodeDeepLevelChange: (id: string, level: 1 | 2 | 3 | 4) => void;
   onCanvasPan: (dx: number, dy: number) => void;
   onZoomAtPoint: (delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => void;
   isZoomModifierActive: boolean;
@@ -16,8 +18,8 @@ interface CanvasProps {
 }
 
 // Размеры ноды для расчёта соединений
-const NODE_WIDTH = 320;
-const NODE_HEIGHT = 220;
+const NODE_WIDTH = 340;
+const NODE_HEIGHT = 180;
 
 export const Canvas: React.FC<CanvasProps> = ({
   canvasState,
@@ -26,6 +28,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   onNodePositionChange,
   onNodePromptChange,
   onNodeBranchCountChange,
+  onNodeDeepLevelChange,
   onCanvasPan,
   onZoomAtPoint,
   isZoomModifierActive,
@@ -128,18 +131,24 @@ export const Canvas: React.FC<CanvasProps> = ({
   }, [canvasState.zoom, isZoomModifierActive, onZoomAtPoint, onCanvasPan]);
 
   // Вычисляем позицию порта относительно ноды
+  // Порты начинаются на 50px от верха ноды
+  // port size = 8px, gap = 6px
   const getPortPosition = (
     node: Node,
     side: 'left' | 'right',
     portIndex: number,
-    totalPorts: number
+    _totalPorts: number
   ) => {
-    const portGap = 14; // gap + port height
-    const totalHeight = totalPorts * portGap;
-    const startY = NODE_HEIGHT / 2 - totalHeight / 2 + portGap / 2;
+    const PORT_SIZE = 8;
+    const PORT_GAP = 6;
+    const PORTS_TOP = 50; // CSS: top: 50px
+    
+    // Y позиция центра конкретного порта
+    const portCenterY = PORTS_TOP + portIndex * (PORT_SIZE + PORT_GAP) + PORT_SIZE / 2;
 
+    // X позиция — центр порта на краю ноды
     const x = side === 'left' ? node.x : node.x + NODE_WIDTH;
-    const y = node.y + startY + portIndex * portGap;
+    const y = node.y + portCenterY;
 
     return { x, y };
   };
@@ -191,75 +200,16 @@ export const Canvas: React.FC<CanvasProps> = ({
           </svg>
 
           {nodes.map((node) => (
-            <div
+            <NodeCard
               key={node.id}
-              className={'node' + (node.isRoot ? ' node--root' : '') + (draggingNodeId === node.id ? ' node--dragging' : '')}
-              style={{ left: node.x, top: node.y }}
-            >
-              <div
-                className="node-header"
-                onMouseDown={(event) => handleNodeHeaderMouseDown(event, node)}
-              >
-                <span className="node-title">
-                  {node.isRoot ? 'Root' : 'Node'}
-                </span>
-                <button
-                  className={'node-play-button' + (node.isPlaying ? ' node-play-button--loading' : '')}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onPlayNode(node.id);
-                  }}
-                  disabled={node.isPlaying}
-                >
-                  {node.isPlaying ? '...' : '▶'}
-                </button>
-              </div>
-              <div className="node-ports node-ports--left">
-                <div className="node-port node-port--input" />
-              </div>
-              <div className="node-ports node-ports--right">
-                {Array.from({ length: node.branchCount }).map((_, index) => (
-                  <div key={index} className="node-port node-port--output" />
-                ))}
-              </div>
-              <div className="node-body">
-                <textarea
-                  className="node-prompt"
-                  placeholder="Вопрос / контекст..."
-                  value={node.prompt}
-                  onChange={(e) => onNodePromptChange(node.id, e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <div className="node-response">
-                  {node.isPlaying ? (
-                    <div className="node-response-loading">
-                      <span className="spinner" />
-                      <span>Модель думает...</span>
-                    </div>
-                  ) : (
-                    <span className="node-response-placeholder">
-                      {node.modelResponse ?? 'Ответ модели появится здесь'}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="node-footer">
-                <label className="node-branch-label">
-                  Ветки:
-                  <select
-                    value={node.branchCount}
-                    onChange={(e) => onNodeBranchCountChange(node.id, Number(e.target.value) as 1 | 2 | 3 | 4)}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                    <option value={4}>4</option>
-                  </select>
-                </label>
-              </div>
-            </div>
+              node={node}
+              isDragging={draggingNodeId === node.id}
+              onHeaderMouseDown={(e) => handleNodeHeaderMouseDown(e, node)}
+              onPromptChange={(prompt) => onNodePromptChange(node.id, prompt)}
+              onBranchCountChange={(count) => onNodeBranchCountChange(node.id, count)}
+              onDeepLevelChange={(level) => onNodeDeepLevelChange(node.id, level)}
+              onPlay={() => onPlayNode(node.id)}
+            />
           ))}
         </div>
       </div>

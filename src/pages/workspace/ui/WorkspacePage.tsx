@@ -81,6 +81,11 @@ export const WorkspacePage: React.FC = () => {
         isSaving={state.isSaving}
       />
       <div className="workspace-main">
+        {state.isLoading && (
+          <div className="workspace-loading">
+            <Loader2 className="animate-spin text-primary" size={48} />
+          </div>
+        )}
         <Canvas
           canvasState={state.canvas}
           nodes={state.nodes}

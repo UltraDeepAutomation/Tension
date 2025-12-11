@@ -16,6 +16,7 @@ import {
 } from '@/shared/db/tensionDb';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_GAP_X, NODE_GAP_Y } from '@/shared/config/constants';
 import { useHistory } from '@/shared/lib/hooks/useHistory';
+import { useToast } from '@/shared/lib/contexts/ToastContext';
 
 export interface WorkspaceState {
   canvas: CanvasState;
@@ -25,6 +26,7 @@ export interface WorkspaceState {
   chats: ChatRecord[];
   currentChatId: string | null;
   isSaving: boolean;
+  isLoading: boolean;
   canUndo: boolean;
   canRedo: boolean;
 }
@@ -57,6 +59,15 @@ export interface WorkspaceModel {
   };
 }
 
+interface ImportData {
+  version: number;
+  timestamp: number;
+  chatId: string;
+  nodes: Node[];
+  connections: Connection[];
+  canvas?: CanvasState;
+}
+
 export function useWorkspaceModel(): WorkspaceModel {
   const [canvas, setCanvas] = React.useState<CanvasState>(defaultCanvasState);
   const [model, setModel] = React.useState<string>('gpt-4.1');
@@ -73,15 +84,19 @@ export function useWorkspaceModel(): WorkspaceModel {
     setHistory: initGraphHistory 
   } = useHistory<{ nodes: Node[]; connections: Connection[] }>({ nodes: [], connections: [] });
 
+  const { showToast } = useToast();
+
   const [chats, setChats] = React.useState<ChatRecord[]>([]);
   const [currentChatId, setCurrentChatId] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
     let cancelled = false;
 
     const bootstrap = async () => {
       try {
+        setIsLoading(true);
         const [storedCanvas, storedModel, storedChatId, existingChats] = await Promise.all([
           readSetting<CanvasState | undefined>('canvas_state'),
           readSetting<string | undefined>('settings_model'),
@@ -147,6 +162,8 @@ export function useWorkspaceModel(): WorkspaceModel {
         }
       } catch (error) {
         console.error('Bootstrap error:', error);
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
     };
 
@@ -451,6 +468,7 @@ export function useWorkspaceModel(): WorkspaceModel {
       }
     } catch (error) {
        const errorMessage = error instanceof Error ? error.message : 'Ошибка выполнения';
+       showToast(errorMessage, 'error');
        setGraph((prev) => ({
          ...prev,
          nodes: prev.nodes.map((node) => {
@@ -461,7 +479,7 @@ export function useWorkspaceModel(): WorkspaceModel {
          }),
        }));
     }
-  }, [graph.nodes, setGraph]); // Careful with deps here
+  }, [graph.nodes, setGraph, showToast]); // Careful with deps here
 
   const deleteNode = useCallback((nodeId: string) => {
     setGraph((prev) => {
@@ -580,11 +598,12 @@ export function useWorkspaceModel(): WorkspaceModel {
          setCanvas(defaultCanvasState);
       }
 
+      showToast('Chat imported successfully', 'success');
     } catch (e) {
       console.error('Import failed', e);
-      alert('Import failed: ' + (e instanceof Error ? e.message : String(e)));
+      showToast('Import failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
     }
-  }, [initGraphHistory]);
+  }, [initGraphHistory, showToast]);
 
   const centerCanvas = useCallback(() => {
     if (graph.nodes.length === 0) {
@@ -620,6 +639,7 @@ export function useWorkspaceModel(): WorkspaceModel {
     chats,
     currentChatId,
     isSaving,
+    isLoading,
     canUndo,
     canRedo,
   };

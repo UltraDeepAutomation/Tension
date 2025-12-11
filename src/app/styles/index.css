@@ -169,10 +169,20 @@ body {
 
 .workspace-main {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
   position: relative;
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+.workspace-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 50;
 }
 
 .canvas-container {
@@ -1100,4 +1110,51 @@ body {
 .node {
   /* Existing styles... */
   animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* Toasts */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--surface);
+  color: var(--text-primary);
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-lg);
+  font-size: 14px;
+  font-weight: 500;
+  animation: toastIn 0.3s ease-out;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toast--error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.toast--success {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }

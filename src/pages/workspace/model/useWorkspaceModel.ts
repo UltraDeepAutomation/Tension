@@ -14,7 +14,16 @@ import {
   saveConnectionsByChat,
   ChatRecord,
 } from '@/shared/db/tensionDb';
-import { NODE_WIDTH, NODE_HEIGHT, NODE_GAP_X, NODE_GAP_Y } from '@/shared/config/constants';
+import { 
+  NODE_WIDTH, 
+  NODE_HEIGHT, 
+  NODE_GAP_X, 
+  NODE_GAP_Y,
+  SIDEBAR_WIDTH,
+  SIDEBAR_PADDING,
+  CANVAS_OFFSET_LIMIT,
+  DEBOUNCE_SAVE_MS,
+} from '@/shared/config/constants';
 import { useHistory } from '@/shared/lib/hooks/useHistory';
 import { useToast } from '@/shared/lib/contexts/ToastContext';
 
@@ -66,6 +75,15 @@ interface ImportData {
   nodes: Node[];
   connections: Connection[];
   canvas?: CanvasState;
+}
+
+/** OpenAI API response type */
+interface OpenAIResponse {
+  choices: Array<{
+    message: {
+      content: string;
+    };
+  }>;
 }
 
 export function useWorkspaceModel(): WorkspaceModel {
@@ -171,25 +189,22 @@ export function useWorkspaceModel(): WorkspaceModel {
     return () => { cancelled = true; };
   }, [initGraphHistory]);
 
+  // Combined save effect for nodes and connections (debounced)
   React.useEffect(() => {
     if (!currentChatId) return;
     setIsSaving(true);
     const timeoutId = setTimeout(async () => {
-      await saveNodesByChat(currentChatId, graph.nodes);
-      setIsSaving(false);
+      try {
+        await Promise.all([
+          saveNodesByChat(currentChatId, graph.nodes),
+          saveConnectionsByChat(currentChatId, graph.connections),
+        ]);
+      } finally {
+        setIsSaving(false);
+      }
     }, 500);
     return () => clearTimeout(timeoutId);
-  }, [graph.nodes, currentChatId]);
-
-  React.useEffect(() => {
-    if (!currentChatId) return;
-    setIsSaving(true);
-    const timeoutId = setTimeout(async () => {
-      await saveConnectionsByChat(currentChatId, graph.connections);
-      setIsSaving(false);
-    }, 500);
-    return () => clearTimeout(timeoutId);
-  }, [graph.connections, currentChatId]);
+  }, [graph.nodes, graph.connections, currentChatId]);
 
   React.useEffect(() => {
     if (currentChatId) void saveSetting('current_chat_id', currentChatId);
@@ -215,7 +230,6 @@ export function useWorkspaceModel(): WorkspaceModel {
   }, []);
 
   const zoomAtPoint = useCallback((delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => {
-    const MAX_OFFSET = 5000;
     setCanvas((prev) => {
       const oldZoom = prev.zoom;
       const newZoom = Math.min(2, Math.max(0.25, oldZoom + delta));
@@ -224,8 +238,8 @@ export function useWorkspaceModel(): WorkspaceModel {
       const mouseY = clientY - canvasRect.top;
       const contentX = mouseX / oldZoom - prev.offsetX;
       const contentY = mouseY / oldZoom - prev.offsetY;
-      const newOffsetX = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, mouseX / newZoom - contentX));
-      const newOffsetY = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, mouseY / newZoom - contentY));
+      const newOffsetX = Math.max(-CANVAS_OFFSET_LIMIT, Math.min(CANVAS_OFFSET_LIMIT, mouseX / newZoom - contentX));
+      const newOffsetY = Math.max(-CANVAS_OFFSET_LIMIT, Math.min(CANVAS_OFFSET_LIMIT, mouseY / newZoom - contentY));
       return { ...prev, zoom: newZoom, offsetX: newOffsetX, offsetY: newOffsetY };
     });
   }, []);
@@ -235,11 +249,10 @@ export function useWorkspaceModel(): WorkspaceModel {
   }, []);
 
   const panCanvas = useCallback((dx: number, dy: number) => {
-    const MAX_OFFSET = 5000;
     setCanvas((prev) => ({
       ...prev,
-      offsetX: Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, prev.offsetX + dx)),
-      offsetY: Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, prev.offsetY + dy)),
+      offsetX: Math.max(-CANVAS_OFFSET_LIMIT, Math.min(CANVAS_OFFSET_LIMIT, prev.offsetX + dx)),
+      offsetY: Math.max(-CANVAS_OFFSET_LIMIT, Math.min(CANVAS_OFFSET_LIMIT, prev.offsetY + dy)),
     }));
   }, []);
 
@@ -431,8 +444,8 @@ export function useWorkspaceModel(): WorkspaceModel {
       });
 
       if (!response.ok) throw new Error(`OpenAI error: ${response.status}`);
-      const data = await response.json();
-      const choices = (data.choices ?? []).slice(0, branchCount);
+      const data: OpenAIResponse = await response.json();
+      const choices = data.choices.slice(0, branchCount);
 
       // 4. Build recursive call data from createdNodes and API responses
       const recursiveCallsData: Array<{
@@ -676,10 +689,11 @@ export function useWorkspaceModel(): WorkspaceModel {
     const maxX = Math.max(...xs) + NODE_WIDTH;
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys) + NODE_HEIGHT;
-    const viewportW = window.innerWidth - 300; 
-    const viewportH = window.innerHeight - 100;
-    const contentW = maxX - minX + 200; 
-    const contentH = maxY - minY + 200;
+    const viewportW = window.innerWidth - SIDEBAR_WIDTH - SIDEBAR_PADDING; 
+    const viewportH = window.innerHeight - 100; // Account for toolbar
+    const contentPadding = 200;
+    const contentW = maxX - minX + contentPadding; 
+    const contentH = maxY - minY + contentPadding;
     const fitZoom = Math.min(Math.max(Math.min(viewportW / contentW, viewportH / contentH), 0.25), 1.5);
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;

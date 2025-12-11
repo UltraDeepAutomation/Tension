@@ -148,7 +148,6 @@ export const WorkspacePage: React.FC = () => {
         onCreateChat={actions.createChat}
         onSelectChat={actions.selectChat}
         onDeleteChat={actions.deleteChat}
-        isSaving={state.isSaving}
       />
       <div className="workspace-main">
         {state.isLoading && (

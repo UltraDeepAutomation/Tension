@@ -185,19 +185,4 @@ export async function saveConnectionsByChat<T extends { id: string }>(chatId: st
   await tx.done;
 }
 
-// Deprecated global methods (для совместимости, пока не удалим везде)
-export async function saveNodes<T = unknown>(nodes: T[]): Promise<void> {
-    // No-op or unsafe legacy
-    console.warn('saveNodes is deprecated, use saveNodesByChat');
-}
-export async function readNodes<T = unknown>(): Promise<T[]> {
-    const db = await getTensionDb();
-    return (await db.getAll('nodes')) as T[];
-}
-export async function saveConnections<T = unknown>(connections: T[]): Promise<void> {
-    console.warn('saveConnections is deprecated, use saveConnectionsByChat');
-}
-export async function readConnections<T = unknown>(): Promise<T[]> {
-    const db = await getTensionDb();
-    return (await db.getAll('connections')) as T[];
-}
+// Legacy functions removed - use saveNodesByChat/saveConnectionsByChat instead

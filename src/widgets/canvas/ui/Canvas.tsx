@@ -147,6 +147,11 @@ export const Canvas: React.FC<CanvasProps> = ({
     onDeleteNode(id);
   }, [onDeleteNode]);
 
+  // --- Optimized Node Lookup (moved before effects that use it) ---
+  const nodeMap = React.useMemo(() => 
+    new Map(nodes.map(n => [n.id, n])), 
+    [nodes]
+  );
 
   // Глобальные слушатели
   React.useEffect(() => {
@@ -162,13 +167,8 @@ export const Canvas: React.FC<CanvasProps> = ({
 
         nodeDragLastPos.current = { x: event.clientX, y: event.clientY };
         
-        // Find node locally to avoid dependency on 'nodes' array causing effect re-bind
-        // But we need 'nodes' to get current position. 
-        // We can pass current X/Y in setDraggingNodeId but position changes.
-        // Better: onNodePositionChange handles delta or absolute. 
-        // Here we need current node X/Y.
-        // We have to depend on 'nodes'.
-        const node = nodes.find((n) => n.id === draggingNodeId);
+        // Use nodeMap for O(1) lookup
+        const node = nodeMap.get(draggingNodeId);
         if (node) {
           onNodePositionChange(draggingNodeId, node.x + dx, node.y + dy, true);
         }
@@ -189,7 +189,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     const handleWindowMouseUp = () => {
       if (draggingNodeId) {
         // Commit the final position to history
-        const node = nodes.find((n) => n.id === draggingNodeId);
+        const node = nodeMap.get(draggingNodeId);
         if (node) {
            onNodePositionChange(draggingNodeId, node.x, node.y, false);
         }
@@ -207,7 +207,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
-  }, [draggingNodeId, isPanning, canvasState.zoom, nodes, onNodePositionChange, onCanvasPan]);
+  }, [draggingNodeId, isPanning, canvasState.zoom, nodeMap, onNodePositionChange, onCanvasPan]);
 
 
   // Wheel handling
@@ -239,8 +239,8 @@ export const Canvas: React.FC<CanvasProps> = ({
   // --- Optimized Connections Rendering ---
   const connectionPaths = React.useMemo(() => {
     return connections.map((conn) => {
-      const fromNode = nodes.find((n) => n.id === conn.fromNodeId);
-      const toNode = nodes.find((n) => n.id === conn.toNodeId);
+      const fromNode = nodeMap.get(conn.fromNodeId);
+      const toNode = nodeMap.get(conn.toNodeId);
       if (!fromNode || !toNode) return null;
 
       // Calculate positions using constants
@@ -269,12 +269,10 @@ export const Canvas: React.FC<CanvasProps> = ({
           className="canvas-connection"
           d={path}
           fill="none"
-          stroke="#6366f1"
-          strokeWidth="2"
         />
       );
     });
-  }, [nodes, connections]);
+  }, [nodeMap, connections]);
 
   return (
     <main className="canvas-container" onContextMenu={handleContextMenu}>

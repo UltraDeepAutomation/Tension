@@ -269,9 +269,9 @@
   
   --node-width: 420px;              /* 1.5x wider (was 320px) */
   --node-min-height: 160px;
-  --node-collapsed-height: 380px;   /* Height with all sections collapsed */
-  --node-gap-x: 150px;              /* Horizontal gap between nodes */
-  --node-gap-y: 80px;               /* Vertical gap between nodes */
+  --node-collapsed-height: 500px;   /* Height with all sections collapsed */
+  --node-gap-x: 200px;              /* Horizontal gap between nodes - synced with constants.ts */
+  --node-gap-y: 120px;              /* Vertical gap between nodes - synced with constants.ts */
   
   /* Collapsible line limits */
   --node-context-lines-collapsed: 3;

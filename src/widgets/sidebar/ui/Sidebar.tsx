@@ -9,25 +9,20 @@ interface SidebarProps {
   onCreateChat: () => void;
   onSelectChat: (chatId: string) => void;
   onDeleteChat: (chatId: string) => void;
-  isSaving?: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
+const SidebarComponent: React.FC<SidebarProps> = ({
   chats,
   currentChatId,
   onOpenSettings,
   onCreateChat,
   onSelectChat,
   onDeleteChat,
-  isSaving,
 }) => {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-title">
-          Tension
-          {isSaving && <span className="saving-badge">Saving...</span>}
-        </div>
+        <div className="sidebar-title">Tension</div>
         <button className="sidebar-new-thread" onClick={onCreateChat}>
           <IconPlus width={14} height={14} />
           <span>Новый диалог</span>
@@ -73,3 +68,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
+
+export const Sidebar = React.memo(SidebarComponent);
+Sidebar.displayName = 'Sidebar';

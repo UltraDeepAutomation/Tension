@@ -18,7 +18,7 @@ interface ToolbarProps {
   saveStatus?: SaveStatus;
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({
+const ToolbarComponent: React.FC<ToolbarProps> = ({
   tool,
   onToolChange,
   onCenterCanvas,
@@ -162,3 +162,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     </div>
   );
 };
+
+export const Toolbar = React.memo(ToolbarComponent);
+Toolbar.displayName = 'Toolbar';

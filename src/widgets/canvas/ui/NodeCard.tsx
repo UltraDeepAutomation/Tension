@@ -20,7 +20,7 @@ const RESPONSE_LINES_COLLAPSED = 10; // Ответ модели - 10 строк 
 const PROMPT_MIN_ROWS = 2;
 const PROMPT_MAX_ROWS = 3;            // Новый запрос - 3 строки макс
 
-export const NodeCard: React.FC<NodeCardProps> = React.memo(({
+const NodeCardComponent: React.FC<NodeCardProps> = ({
   node,
   isDragging,
   isSelected = false,
@@ -201,4 +201,7 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
       </div>
     </div>
   );
-});
+};
+
+export const NodeCard = React.memo(NodeCardComponent);
+NodeCard.displayName = 'NodeCard';

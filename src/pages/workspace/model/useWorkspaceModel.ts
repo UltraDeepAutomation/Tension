@@ -56,8 +56,8 @@ export function useWorkspaceModel(): WorkspaceModel {
         } else {
           const root: Node = {
             id: 'root',
-            x: 0,
-            y: 0,
+            x: 4000 - 160, // центр холста минус половина ширины ноды
+            y: 4000 - 110, // центр холста минус половина высоты ноды
             prompt: 'С чем сейчас поработаем?',
             modelResponse: null,
             branchCount: 4,
@@ -179,8 +179,14 @@ export function useWorkspaceModel(): WorkspaceModel {
         const parent = prev[parentIndex];
         const newNodes = [...prev];
 
-        const baseX = parent.x + 360;
-        const baseY = parent.y - ((branchCount - 1) * 80) / 2;
+        const NODE_WIDTH = 320;
+        const NODE_HEIGHT = 220;
+        const GAP_X = 80;
+        const GAP_Y = 40;
+
+        const baseX = parent.x + NODE_WIDTH + GAP_X;
+        const totalHeight = branchCount * NODE_HEIGHT + (branchCount - 1) * GAP_Y;
+        const baseY = parent.y - totalHeight / 2 + NODE_HEIGHT / 2;
 
         const created: Node[] = choices.map((choice: any, index: number) => {
           const childId = `${nodeId}-child-${now}-${index}`;
@@ -189,7 +195,7 @@ export function useWorkspaceModel(): WorkspaceModel {
           const child: Node = {
             id: childId,
             x: baseX,
-            y: baseY + index * 80,
+            y: baseY + index * (NODE_HEIGHT + GAP_Y),
             prompt: source.prompt,
             modelResponse: typeof content === 'string' ? content : String(content),
             branchCount: parent.branchCount,
@@ -210,6 +216,17 @@ export function useWorkspaceModel(): WorkspaceModel {
           isPlaying: false,
           modelResponse: null,
         };
+
+        // создаём connections
+        const newConnections: Connection[] = created.map((child, index) => ({
+          id: `${nodeId}->${child.id}`,
+          fromNodeId: nodeId,
+          fromPortIndex: index,
+          toNodeId: child.id,
+          toPortIndex: 0,
+        }));
+
+        setConnections((prev) => [...prev, ...newConnections]);
 
         return newNodes;
       });

@@ -27,6 +27,8 @@ export interface Node {
 
 export interface Connection {
   id: string;
-  fromPortId: PortId;
-  toPortId: PortId;
+  fromNodeId: NodeId;
+  fromPortIndex: number;
+  toNodeId: NodeId;
+  toPortIndex: number;
 }

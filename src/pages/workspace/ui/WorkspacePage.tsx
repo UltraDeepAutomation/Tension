@@ -50,10 +50,11 @@ export const WorkspacePage: React.FC = () => {
         <Canvas
           canvasState={state.canvas}
           nodes={state.nodes}
+          connections={state.connections}
           onNodePositionChange={actions.updateNodePosition}
           onChangeZoom={actions.changeZoom}
           isZoomModifierActive={isZoomModifierActive}
-          onPlayNode={(nodeId) =>
+          onPlayNode={(nodeId: string) =>
             actions.playNode({ nodeId, apiKey, model: state.settings.model })
           }
         />

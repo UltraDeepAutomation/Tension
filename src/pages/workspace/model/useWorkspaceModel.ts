@@ -199,8 +199,6 @@ export function useWorkspaceModel(): WorkspaceModel {
       updatedAt: Date.now(),
     };
 
-    await saveChat(newChat);
-    
     const root: Node = {
       id: 'root',
       x: 100,
@@ -215,30 +213,35 @@ export function useWorkspaceModel(): WorkspaceModel {
       inputs: [],
       outputs: [],
     };
-    
+
+    // 1. Сначала сохраняем в БД
+    await saveChat(newChat);
     await saveNodesByChat(newChatId, [root]);
     await saveConnectionsByChat(newChatId, []);
 
+    // 2. Потом обновляем стейт (Batch update в React 18+)
     setChats(prev => [newChat, ...prev]);
-    setCurrentChatId(newChatId);
+    // Сначала ноды, чтобы при смене ID они уже были готовы (хотя в батче это неважно)
     setNodes([root]);
     setConnections([]);
     setCanvas(defaultCanvasState);
+    setCurrentChatId(newChatId);
   };
 
   const selectChat = async (chatId: string) => {
     if (chatId === currentChatId) return;
     
-    setCurrentChatId(chatId);
-    
+    // 1. Сначала загружаем данные (асинхронно)
     const [nodesForChat, connsForChat] = await Promise.all([
       readNodesByChat<Node>(chatId),
       readConnectionsByChat<Connection>(chatId),
     ]);
     
+    // 2. Потом обновляем стейт синхронно (одним батчем)
     setNodes(nodesForChat);
     setConnections(connsForChat);
     setCanvas(defaultCanvasState);
+    setCurrentChatId(chatId);
   };
 
   const deleteChatAction = async (chatId: string) => {

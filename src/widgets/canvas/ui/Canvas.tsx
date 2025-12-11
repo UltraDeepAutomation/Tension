@@ -166,6 +166,10 @@ export const Canvas: React.FC<CanvasProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        style={{
+          backgroundSize: `${24 * canvasState.zoom}px ${24 * canvasState.zoom}px`,
+          backgroundPosition: `${canvasState.offsetX * canvasState.zoom}px ${canvasState.offsetY * canvasState.zoom}px`,
+        }}
       >
         <div
           className="canvas-inner"

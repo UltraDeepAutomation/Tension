@@ -1,4 +1,6 @@
 import React from 'react';
+import { Select } from '@/shared/ui/Select';
+import { IconLayers, IconGrid, IconZap } from '@/shared/ui/Icons'; // Using existing icons, might need import or upload more
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -33,10 +35,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     onChangeKey(event.target.value);
   };
 
-  const handleModelChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    onChangeModel(event.target.value);
-  };
-
   return (
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
@@ -61,10 +59,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </label>
           <label className="settings-field">
             <span>Модель</span>
-            <select value={model} onChange={handleModelChange}>
-              <option value="gpt-4.1">gpt-4.1</option>
-              <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-            </select>
+            <Select
+              value={model}
+              onChange={(val) => onChangeModel(val as string)}
+              options={[
+                { value: 'gpt-4o', label: 'GPT-4o' },
+                { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+                { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+                { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
+                { value: 'gpt-4.1', label: 'GPT-4.1 (Preview)' }, // Keep user's custom value just in case
+              ]}
+              className="settings-select"
+            />
           </label>
           <p className="settings-hint">
             Ключ хранится локально в IndexedDB этого браузера и не отправляется на сервер.
@@ -77,12 +83,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div className="settings-actions-row">
             {onExport && (
               <button className="settings-action-button settings-action-item" onClick={onExport}>
-                Export JSON
+                <span style={{ marginRight: 6 }}>📤</span> Export JSON
               </button>
             )}
             {onImport && (
               <label className="settings-action-button settings-action-item">
-                Import JSON
+                <span style={{ marginRight: 6 }}>📥</span> Import JSON
                 <input
                   type="file"
                   accept=".json"

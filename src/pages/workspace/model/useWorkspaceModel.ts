@@ -590,7 +590,6 @@ export function useWorkspaceModel(): WorkspaceModel {
       duplicateNode,
       exportChat,
       importChat,
-      importChat,
     },
   };
 }

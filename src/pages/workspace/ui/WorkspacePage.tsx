@@ -94,6 +94,8 @@ export const WorkspacePage: React.FC = () => {
           }
           onDeleteNode={actions.deleteNode}
           onDuplicateNode={actions.duplicateNode}
+          onCenterCanvas={actions.centerCanvas}
+          onResetZoom={actions.resetZoom}
         />
         <Toolbar
           tool={state.canvas.tool}

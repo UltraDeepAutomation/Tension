@@ -461,7 +461,15 @@ export function useWorkspaceModel(): WorkspaceModel {
       const data = JSON.parse(text);
       
       if (!Array.isArray(data.nodes) || !Array.isArray(data.connections)) {
-        throw new Error('Invalid format');
+        throw new Error('Invalid format: nodes or connections array missing');
+      }
+
+      // Basic schema validation
+      if (data.nodes.length > 0) {
+        const n = data.nodes[0];
+        if (!n.id || typeof n.x !== 'number' || typeof n.y !== 'number') {
+           throw new Error('Invalid node format: missing id or coordinates');
+        }
       }
 
       const newChatId = `chat-import-${Date.now()}`;

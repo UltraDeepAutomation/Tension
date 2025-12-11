@@ -652,6 +652,17 @@ body {
   color: white;
 }
 
+.settings-actions-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.settings-action-item {
+  flex: 1;
+}
+
 .node-delete-btn {
   background: transparent;
   border: none;

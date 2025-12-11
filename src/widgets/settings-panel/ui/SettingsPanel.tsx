@@ -74,14 +74,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <p className="settings-hint">Ключ сохранён. Можно использовать Play в нодах.</p>
           )}
           
-          <div style={{ display: 'flex', gap: '10px', marginTop: '10px', width: '100%' }}>
+          <div className="settings-actions-row">
             {onExport && (
-              <button className="settings-action-button" onClick={onExport} style={{ flex: 1 }}>
+              <button className="settings-action-button settings-action-item" onClick={onExport}>
                 Export JSON
               </button>
             )}
             {onImport && (
-              <label className="settings-action-button" style={{ flex: 1 }}>
+              <label className="settings-action-button settings-action-item">
                 Import JSON
                 <input
                   type="file"

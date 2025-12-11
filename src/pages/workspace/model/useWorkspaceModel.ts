@@ -26,6 +26,9 @@ import {
 } from '@/shared/config/constants';
 import { useHistory } from '@/shared/lib/hooks/useHistory';
 import { useToast } from '@/shared/lib/contexts/ToastContext';
+import { getLLMGateway, type ProviderConfig, type ProviderId } from '@/shared/lib/llm';
+import { getCouncilEngine, getCouncilById, PRESET_COUNCILS } from '@/shared/lib/council';
+import type { Council, CouncilResult } from '@/entities/council';
 
 export interface WorkspaceState {
   canvas: CanvasState;
@@ -38,6 +41,9 @@ export interface WorkspaceState {
   isLoading: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  // Multi-provider support
+  providers: ProviderConfig[];
+  selectedCouncilId: string | null;
 }
 
 export interface WorkspaceModel {
@@ -65,6 +71,11 @@ export interface WorkspaceModel {
     importChat: (file: File) => Promise<void>;
     undo: () => void;
     redo: () => void;
+    // Multi-provider actions
+    updateProvider: (config: ProviderConfig) => void;
+    testProvider: (providerId: ProviderId) => Promise<boolean>;
+    selectCouncil: (councilId: string | null) => void;
+    playCouncil: (params: { nodeId: string; councilId: string }) => Promise<void>;
   };
 }
 
@@ -108,6 +119,14 @@ export function useWorkspaceModel(): WorkspaceModel {
   const [currentChatId, setCurrentChatId] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
+  
+  // Multi-provider state
+  const [providers, setProviders] = React.useState<ProviderConfig[]>([]);
+  const [selectedCouncilId, setSelectedCouncilId] = React.useState<string | null>(null);
+  
+  // LLM Gateway instance
+  const gateway = React.useMemo(() => getLLMGateway(), []);
+  const councilEngine = React.useMemo(() => getCouncilEngine(), []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -115,17 +134,24 @@ export function useWorkspaceModel(): WorkspaceModel {
     const bootstrap = async () => {
       try {
         setIsLoading(true);
-        const [storedCanvas, storedModel, storedChatId, existingChats] = await Promise.all([
+        const [storedCanvas, storedModel, storedChatId, existingChats, storedProviders] = await Promise.all([
           readSetting<CanvasState | undefined>('canvas_state'),
           readSetting<string | undefined>('settings_model'),
           readSetting<string | undefined>('current_chat_id'),
           readChats(),
+          readSetting<ProviderConfig[] | undefined>('providers'),
         ]);
 
         if (cancelled) return;
 
         if (storedCanvas) setCanvas(storedCanvas);
         if (storedModel) setModel(storedModel);
+        
+        // Load and configure providers
+        if (storedProviders && storedProviders.length > 0) {
+          setProviders(storedProviders);
+          storedProviders.forEach(config => gateway.configureProvider(config));
+        }
 
         let activeChatId = storedChatId;
         let chatList = existingChats;
@@ -705,6 +731,92 @@ export function useWorkspaceModel(): WorkspaceModel {
     }));
   }, [graph.nodes]);
 
+  // Provider management
+  const updateProvider = useCallback((config: ProviderConfig) => {
+    setProviders(prev => {
+      const existing = prev.findIndex(p => p.id === config.id);
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = config;
+        return updated;
+      }
+      return [...prev, config];
+    });
+    
+    // Configure gateway
+    gateway.configureProvider(config);
+    
+    // Save to IndexedDB
+    void saveSetting('providers', providers);
+  }, [gateway, providers]);
+  
+  const testProvider = useCallback(async (providerId: ProviderId): Promise<boolean> => {
+    return gateway.testProvider(providerId);
+  }, [gateway]);
+  
+  const selectCouncil = useCallback((councilId: string | null) => {
+    setSelectedCouncilId(councilId);
+  }, []);
+  
+  // Council execution
+  const playCouncil = useCallback(async (params: { nodeId: string; councilId: string }) => {
+    const { nodeId, councilId } = params;
+    const council = getCouncilById(councilId);
+    if (!council) {
+      showToast('Council not found', 'error');
+      return;
+    }
+    
+    const node = graph.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
+    const prompt = node.prompt || node.context;
+    if (!prompt.trim()) {
+      showToast('Введите запрос', 'error');
+      return;
+    }
+    
+    // Set node to playing state
+    setGraph(prev => ({
+      ...prev,
+      nodes: prev.nodes.map(n => 
+        n.id === nodeId ? { ...n, isPlaying: true, error: undefined } : n
+      ),
+    }));
+    
+    try {
+      const result = await councilEngine.execute(council, prompt, (progress) => {
+        // Could update UI with progress here
+        console.log(`Council ${progress.stageName}: ${progress.progress}%`);
+      });
+      
+      // Update node with council result
+      setGraph(prev => ({
+        ...prev,
+        nodes: prev.nodes.map(n => 
+          n.id === nodeId ? { 
+            ...n, 
+            isPlaying: false,
+            modelResponse: result.stage3.finalResponse,
+            // Store council metadata in context for display
+            context: `[Council: ${council.name}] Confidence: ${result.stage3.confidence}%\n\n${prompt}`,
+          } : n
+        ),
+      }));
+      
+      showToast(`Council завершён! Confidence: ${result.stage3.confidence}%`, 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Council error';
+      setGraph(prev => ({
+        ...prev,
+        nodes: prev.nodes.map(n => 
+          n.id === nodeId ? { ...n, isPlaying: false, error: errorMessage } : n
+        ),
+      }));
+      showToast(errorMessage, 'error');
+    }
+  }, [graph.nodes, councilEngine, setGraph, showToast]);
+
   const state: WorkspaceState = {
     canvas,
     settings: { model },
@@ -716,6 +828,8 @@ export function useWorkspaceModel(): WorkspaceModel {
     isLoading,
     canUndo,
     canRedo,
+    providers,
+    selectedCouncilId,
   };
 
   return {
@@ -743,6 +857,11 @@ export function useWorkspaceModel(): WorkspaceModel {
       importChat,
       undo,
       redo,
+      // Multi-provider actions
+      updateProvider,
+      testProvider,
+      selectCouncil,
+      playCouncil,
     },
   };
 }

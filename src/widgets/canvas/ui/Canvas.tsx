@@ -21,6 +21,10 @@ interface CanvasProps {
   onDuplicateNode: (id: string) => void;
   onCenterCanvas: () => void;
   onResetZoom: () => void;
+  // Council mode
+  councilMode?: boolean;
+  councilName?: string;
+  onPlayCouncil?: (nodeId: string) => void;
 }
 
 export const Canvas: React.FC<CanvasProps> = ({
@@ -39,6 +43,9 @@ export const Canvas: React.FC<CanvasProps> = ({
   onDuplicateNode,
   onCenterCanvas,
   onResetZoom,
+  councilMode = false,
+  councilName,
+  onPlayCouncil,
 }) => {
   const canvasRef = React.useRef<HTMLDivElement>(null);
 
@@ -50,6 +57,9 @@ export const Canvas: React.FC<CanvasProps> = ({
   const [isPanning, setIsPanning] = React.useState(false);
   const panLastPos = React.useRef<{ x: number; y: number } | null>(null);
 
+  // Выделенная нода
+  const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
+
   // Context Menu
   const [contextMenu, setContextMenu] = React.useState<{
     x: number;
@@ -57,6 +67,30 @@ export const Canvas: React.FC<CanvasProps> = ({
     type: 'canvas' | 'node';
     targetId?: string;
   } | null>(null);
+
+  // Keyboard handler for Delete
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Не удалять если фокус в input/textarea
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        
+        if (selectedNodeId) {
+          e.preventDefault();
+          onDeleteNode(selectedNodeId);
+          setSelectedNodeId(null);
+        }
+      }
+      // Escape — снять выделение
+      if (e.key === 'Escape') {
+        setSelectedNodeId(null);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeId, onDeleteNode]);
 
   const handleContextMenu = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -300,11 +334,19 @@ export const Canvas: React.FC<CanvasProps> = ({
               key={node.id}
               node={node}
               isDragging={draggingNodeId === node.id}
+              isSelected={selectedNodeId === node.id}
+              councilMode={councilMode}
+              councilName={councilName}
               onHeaderMouseDown={(e) => handleNodeHeaderMouseDown(e, node)}
               onPromptChange={(prompt) => onNodePromptChange(node.id, prompt)}
               onBranchCountChange={(count) => onNodeBranchCountChange(node.id, count)}
               onDeepLevelChange={(level) => onNodeDeepLevelChange(node.id, level)}
               onPlay={() => onPlayNode(node.id)}
+              onPlayCouncil={onPlayCouncil ? () => onPlayCouncil(node.id) : undefined}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedNodeId(node.id);
+              }}
             />
           ))}
         </div>

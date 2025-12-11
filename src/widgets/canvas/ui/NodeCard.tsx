@@ -1,16 +1,19 @@
 import React from 'react';
 import type { Node } from '@/entities/node/model/types';
-import { Play, Loader2 } from 'lucide-react';
+import { Play, Loader2, Users } from 'lucide-react';
 
 interface NodeCardProps {
   node: Node;
   isDragging: boolean;
   isSelected?: boolean;
+  councilMode?: boolean;
+  councilName?: string;
   onHeaderMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
   onPromptChange: (prompt: string) => void;
   onBranchCountChange: (count: 1 | 2 | 3 | 4) => void;
   onDeepLevelChange: (level: 1 | 2 | 3 | 4) => void;
   onPlay: () => void;
+  onPlayCouncil?: () => void;
   onClick?: (e: React.MouseEvent) => void;
 }
 
@@ -24,11 +27,14 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
   node,
   isDragging,
   isSelected = false,
+  councilMode = false,
+  councilName,
   onHeaderMouseDown,
   onPromptChange,
   onBranchCountChange,
   onDeepLevelChange,
   onPlay,
+  onPlayCouncil,
   onClick,
 }) => {
   const [isContextExpanded, setIsContextExpanded] = React.useState(false);
@@ -57,19 +63,33 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
     >
       {/* Header */}
       <div className="node-header" onMouseDown={onHeaderMouseDown}>
-        <span className="node-title">{node.isRoot ? 'Root' : 'Node'}</span>
+        <div className="node-header-left">
+          <span className="node-title">{node.isRoot ? 'Root' : 'Node'}</span>
+          {councilMode && councilName && (
+            <span className="node-council-badge" title="Council Mode">
+              <Users size={12} />
+              {councilName}
+            </span>
+          )}
+        </div>
         <button
-          className={`node-play-button ${node.isPlaying ? 'node-play-button--loading' : ''}`}
+          className={`node-play-button ${node.isPlaying ? 'node-play-button--loading' : ''} ${councilMode ? 'node-play-button--council' : ''}`}
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            onPlay();
+            if (councilMode && onPlayCouncil) {
+              onPlayCouncil();
+            } else {
+              onPlay();
+            }
           }}
           disabled={node.isPlaying}
-          title="Запустить (Enter)"
+          title={councilMode ? 'Запустить Council' : 'Запустить (Enter)'}
         >
           {node.isPlaying ? (
             <Loader2 size={14} className="animate-spin" />
+          ) : councilMode ? (
+            <Users size={14} />
           ) : (
             <Play size={14} />
           )}

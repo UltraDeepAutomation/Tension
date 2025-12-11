@@ -7,11 +7,14 @@ import { useWorkspaceModel } from '@/pages/workspace/model/useWorkspaceModel';
 import { useOpenAIKey } from '@/features/manage-openai-key/model/useOpenAIKey';
 import { CommandPalette, CommandAction } from '@/widgets/command-palette/ui/CommandPalette';
 import { Minimap } from '@/widgets/minimap/ui/Minimap';
-import { Loader2 } from 'lucide-react';
+import { CouncilPanel } from '@/widgets/council-panel';
+import { getCouncilById } from '@/shared/lib/council';
+import { Loader2, Users } from 'lucide-react';
 
 export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
   const [isCmdKOpen, setIsCmdKOpen] = React.useState(false);
+  const [isCouncilPanelOpen, setIsCouncilPanelOpen] = React.useState(false);
   const { state, actions } = useWorkspaceModel();
   const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
   
@@ -173,6 +176,9 @@ export const WorkspacePage: React.FC = () => {
           onDuplicateNode={actions.duplicateNode}
           onCenterCanvas={actions.centerCanvas}
           onResetZoom={actions.resetZoom}
+          councilMode={!!state.selectedCouncilId}
+          councilName={state.selectedCouncilId ? getCouncilById(state.selectedCouncilId)?.name : undefined}
+          onPlayCouncil={state.selectedCouncilId ? (nodeId) => actions.playCouncil({ nodeId, councilId: state.selectedCouncilId! }) : undefined}
         />
         <Toolbar
           tool={state.canvas.tool}
@@ -209,7 +215,50 @@ export const WorkspacePage: React.FC = () => {
             actions.clearData();
             setIsSettingsOpen(false);
           }}
+          // Multi-provider props
+          providers={state.providers}
+          onUpdateProvider={actions.updateProvider}
+          onTestProvider={actions.testProvider}
         />
+        
+        {/* Council Panel */}
+        <CouncilPanel
+          isOpen={isCouncilPanelOpen}
+          selectedCouncilId={state.selectedCouncilId}
+          onSelectCouncil={(council) => {
+            actions.selectCouncil(council.id);
+            setIsCouncilPanelOpen(false);
+          }}
+          onClose={() => setIsCouncilPanelOpen(false)}
+        />
+        
+        {/* Council Mode Toggle Button */}
+        <button
+          className={`council-toggle-button ${state.selectedCouncilId ? 'council-toggle-button--active' : ''}`}
+          onClick={() => {
+            if (state.selectedCouncilId) {
+              // Toggle off council mode
+              actions.selectCouncil(null);
+            } else {
+              setIsCouncilPanelOpen(true);
+            }
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setIsCouncilPanelOpen(true);
+          }}
+          title={state.selectedCouncilId 
+            ? `Council: ${getCouncilById(state.selectedCouncilId)?.name} (клик чтобы выключить, ПКМ для выбора)`
+            : 'Включить Council Mode'
+          }
+        >
+          <Users size={18} />
+          {state.selectedCouncilId && (
+            <span className="council-toggle-name">
+              {getCouncilById(state.selectedCouncilId)?.icon}
+            </span>
+          )}
+        </button>
       </div>
     </div>
   );

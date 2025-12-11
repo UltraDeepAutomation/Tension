@@ -246,7 +246,24 @@ body {
 
 .node--selected {
   border-color: var(--node-border-selected);
-  box-shadow: var(--node-shadow), 0 0 0 2px var(--node-border-selected);
+  box-shadow: var(--node-shadow), 0 0 0 3px var(--node-border-selected);
+  z-index: 50;
+}
+
+.node--selected::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px dashed var(--node-border-selected);
+  border-radius: calc(var(--radius-lg) + 4px);
+  opacity: 0.5;
+  pointer-events: none;
+  animation: selection-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes selection-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
 }
 
 .node--dragging {
@@ -299,6 +316,79 @@ body {
   color: var(--color-primary);
   text-transform: none;
   letter-spacing: 0;
+}
+
+/* Provider Badge */
+.node-provider-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-muted);
+  border: 1px solid var(--badge-color, var(--color-border-default));
+}
+
+/* Confidence Badge */
+.node-confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  font-size: 9px;
+  font-weight: var(--font-weight-bold);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.node-confidence-badge--high {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-light);
+}
+
+.node-confidence-badge--medium {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+}
+
+.node-confidence-badge--low {
+  background: var(--color-error-soft);
+  color: var(--color-error);
+  border: 1px solid var(--color-error-light);
+}
+
+/* Provider-specific node styles */
+.node--provider-openai {
+  border-left: 3px solid #10a37f;
+}
+
+.node--provider-anthropic {
+  border-left: 3px solid #d97706;
+}
+
+.node--provider-google {
+  border-left: 3px solid #4285f4;
+}
+
+.node--provider-openrouter {
+  border-left: 3px solid #8b5cf6;
+}
+
+.node--provider-xai {
+  border-left: 3px solid #1a1a1a;
+}
+
+.node--provider-ollama {
+  border-left: 3px solid #0ea5e9;
+}
+
+/* High confidence node glow */
+.node--high-confidence {
+  box-shadow: var(--node-shadow), 0 0 20px rgba(34, 197, 94, 0.2);
 }
 
 .node-play-button {

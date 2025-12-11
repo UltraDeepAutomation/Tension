@@ -11,6 +11,12 @@ export interface Port {
   index: number;
 }
 
+/** Тип ноды */
+export type NodeType = 'standard' | 'council' | 'evaluation' | 'synthesis';
+
+/** ID провайдера LLM */
+export type ProviderId = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'ollama';
+
 export interface Node {
   id: NodeId;
   x: number;
@@ -30,6 +36,17 @@ export interface Node {
   error?: string;
   inputs: Port[];
   outputs: Port[];
+  
+  /** Тип ноды (standard, council, etc.) */
+  type?: NodeType;
+  /** Провайдер, использованный для генерации ответа */
+  providerId?: ProviderId;
+  /** ID модели, использованной для генерации */
+  modelId?: string;
+  /** Confidence score для council нод (0-1) */
+  confidence?: number;
+  /** ID совета для council нод */
+  councilId?: string;
 }
 
 export interface Connection {

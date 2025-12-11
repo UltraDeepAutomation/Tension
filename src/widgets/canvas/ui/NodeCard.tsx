@@ -1,6 +1,16 @@
 import React from 'react';
-import type { Node } from '@/entities/node/model/types';
+import type { Node, ProviderId } from '@/entities/node/model/types';
 import { Play, Loader2, Users } from 'lucide-react';
+
+/** Иконки и цвета для провайдеров */
+const PROVIDER_STYLES: Record<ProviderId, { icon: string; color: string; name: string }> = {
+  openai: { icon: '🟢', color: '#10a37f', name: 'OpenAI' },
+  anthropic: { icon: '🟠', color: '#d97706', name: 'Anthropic' },
+  google: { icon: '🔵', color: '#4285f4', name: 'Google' },
+  openrouter: { icon: '🟣', color: '#8b5cf6', name: 'OpenRouter' },
+  xai: { icon: '⚫', color: '#1a1a1a', name: 'xAI' },
+  ollama: { icon: '🦙', color: '#0ea5e9', name: 'Ollama' },
+};
 
 interface NodeCardProps {
   node: Node;
@@ -53,22 +63,60 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
   const promptRows = isPromptExpanded ? 12 : calculatedRows;
 
   const hasError = Boolean(node.error);
+  const providerStyle = node.providerId ? PROVIDER_STYLES[node.providerId] : null;
+
+  // Build class names
+  const nodeClasses = [
+    'node',
+    node.isRoot && 'node--root',
+    isDragging && 'node--dragging',
+    node.isPlaying && 'node--loading',
+    hasError && 'node--error',
+    isSelected && 'node--selected',
+    node.providerId && `node--provider-${node.providerId}`,
+    node.type === 'council' && 'node--council',
+    node.confidence !== undefined && node.confidence >= 0.8 && 'node--high-confidence',
+  ].filter(Boolean).join(' ');
 
   return (
     <div
       data-node-id={node.id}
-      className={`node ${node.isRoot ? 'node--root' : ''} ${isDragging ? 'node--dragging' : ''} ${node.isPlaying ? 'node--loading' : ''} ${hasError ? 'node--error' : ''} ${isSelected ? 'node--selected' : ''}`}
-      style={{ left: node.x, top: node.y }}
+      className={nodeClasses}
+      style={{ 
+        left: node.x, 
+        top: node.y,
+        ...(providerStyle && node.modelResponse ? { '--provider-color': providerStyle.color } as React.CSSProperties : {}),
+      }}
       onClick={onClick}
     >
       {/* Header */}
       <div className="node-header" onMouseDown={onHeaderMouseDown}>
         <div className="node-header-left">
           <span className="node-title">{node.isRoot ? 'Root' : 'Node'}</span>
+          {/* Provider badge */}
+          {providerStyle && node.modelResponse && (
+            <span 
+              className="node-provider-badge" 
+              title={`${providerStyle.name}${node.modelId ? ` • ${node.modelId}` : ''}`}
+              style={{ '--badge-color': providerStyle.color } as React.CSSProperties}
+            >
+              {providerStyle.icon}
+            </span>
+          )}
+          {/* Council badge */}
           {councilMode && councilName && (
             <span className="node-council-badge" title="Council Mode">
               <Users size={12} />
               {councilName}
+            </span>
+          )}
+          {/* Confidence indicator */}
+          {node.confidence !== undefined && (
+            <span 
+              className={`node-confidence-badge ${node.confidence >= 0.8 ? 'node-confidence-badge--high' : node.confidence >= 0.5 ? 'node-confidence-badge--medium' : 'node-confidence-badge--low'}`}
+              title={`Confidence: ${Math.round(node.confidence * 100)}%`}
+            >
+              {Math.round(node.confidence * 100)}%
             </span>
           )}
         </div>

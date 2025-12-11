@@ -150,6 +150,9 @@ export const Canvas: React.FC<CanvasProps> = ({
                      target.tagName === 'svg';
 
     if (isCanvas) {
+      // Снять выделение при клике на пустое место
+      setSelectedNodeId(null);
+      
       // In hand mode OR when clicking empty canvas, allow panning
       // In cursor mode, only pan if clicking on empty canvas (not nodes)
       if (canvasState.tool === 'hand' || isCanvas) {

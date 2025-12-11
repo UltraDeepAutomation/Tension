@@ -514,6 +514,10 @@ export function useWorkspaceModel(): WorkspaceModel {
             modelResponse: responseText,
             isPlaying: deepLevel > 1, // Keep playing if we'll recurse
             prompt: deepLevel > 1 ? `Продолжи и углуби этот ответ: ${responseText.slice(0, 200)}...` : '',
+            // Store provider info for visual differentiation
+            providerId: 'openai' as const,
+            modelId: modelName,
+            type: 'standard' as const,
           };
         }),
       }));

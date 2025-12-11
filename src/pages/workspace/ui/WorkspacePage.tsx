@@ -7,6 +7,7 @@ import { useWorkspaceModel } from '@/pages/workspace/model/useWorkspaceModel';
 import { useOpenAIKey } from '@/features/manage-openai-key/model/useOpenAIKey';
 import { CommandPalette, CommandAction } from '@/widgets/command-palette/ui/CommandPalette';
 import { Minimap } from '@/widgets/minimap/ui/Minimap';
+import { Loader2 } from 'lucide-react';
 
 export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);

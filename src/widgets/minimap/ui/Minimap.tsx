@@ -13,10 +13,10 @@ export const Minimap: React.FC<MinimapProps> = ({ nodes, canvasState, onNavigate
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Constants for minimap rendering
-  const MINIMAP_WIDTH = 240;
-  const MINIMAP_HEIGHT = 160;
-  const PADDING = 40;
+  // Constants for minimap rendering (match CSS tokens)
+  const MINIMAP_WIDTH = 140;
+  const MINIMAP_HEIGHT = 90;
+  const PADDING = 16;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -45,7 +45,7 @@ export const Minimap: React.FC<MinimapProps> = ({ nodes, canvasState, onNavigate
     ctx.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
 
     // 4. Draw nodes
-    ctx.fillStyle = 'rgba(200, 200, 210, 0.8)'; // Node color
+    ctx.fillStyle = '#d1d5db'; // Soft gray for nodes
     nodes.forEach((node) => {
       // Map node coordinates to minimap coordinates
       // Offset by minX/minY to normalize to 0,0, then add PADDING, then scale
@@ -60,24 +60,14 @@ export const Minimap: React.FC<MinimapProps> = ({ nodes, canvasState, onNavigate
       
       // Highlight root or active?
       if (node.isRoot) {
-         ctx.fillStyle = 'rgba(99, 102, 241, 0.8)';
+         ctx.fillStyle = '#9ca3af'; // Darker gray for root
          ctx.fill();
-         ctx.fillStyle = 'rgba(200, 200, 210, 0.8)'; // Reset
+         ctx.fillStyle = '#d1d5db'; // Reset
       }
     });
 
     // 5. Draw Viewport Rect
-    // Viewport in world coords:
-    // visibleX = -offsetX / zoom
-    // visibleY = -offsetY / zoom
-    // visibleW = window.innerWidth / zoom
-    // visibleH = window.innerHeight / zoom
-    
-    // BUT: offsetX in canvasState is the translation applied to the container.
-    // transform: translate(offsetX, offsetY)
-    // So top-left of content visible at 0,0 screen is when world point p satisfies: p * zoom + offset = 0 => p = -offset/zoom
-    
-    const viewportWidth = window.innerWidth; // Approximate, ideally passed as prop
+    const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
     const vx = (-canvasState.offsetX) / canvasState.zoom;
@@ -90,8 +80,8 @@ export const Minimap: React.FC<MinimapProps> = ({ nodes, canvasState, onNavigate
     const vmw = vw * scale;
     const vmh = vh * scale;
 
-    ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#9ca3af'; // Soft gray for viewport
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(vmx, vmy, vmw, vmh);
 
   }, [nodes, canvasState]);

@@ -353,50 +353,50 @@ export function useWorkspaceModel(): WorkspaceModel {
     setCanvas(defaultCanvasState);
   }, [currentChatId, setGraph]);
 
-  const playNode = useCallback(async ({ nodeId, apiKey, model: modelName }: { nodeId: string; apiKey: string; model: string }) => {
-    // 1. Prepare
-    const source = graph.nodes.find((n) => n.id === nodeId);
-    if (!source || !apiKey) return;
+  // Helper function for recursive node execution
+  const executeNodeRecursive = useCallback(async (
+    nodeId: string,
+    prompt: string,
+    branchCount: 1 | 2 | 3 | 4,
+    deepLevel: 1 | 2 | 3 | 4,
+    parentX: number,
+    parentY: number,
+    apiKey: string,
+    modelName: string
+  ): Promise<void> => {
+    if (!apiKey || !prompt) return;
 
-    const branchCount = source.branchCount;
-    const deepLevel = source.deepLevel;
     const now = Date.now();
     const childIds: string[] = [];
 
-    // 2. Optimistic Update (Create structure)
+    // 1. Create child nodes structure
+    const childX = parentX + NODE_WIDTH + NODE_GAP_X;
+    const parentCenterY = parentY + NODE_HEIGHT / 2;
+    const totalChildrenHeight = branchCount * NODE_HEIGHT + (branchCount - 1) * NODE_GAP_Y;
+    const firstChildY = parentCenterY - totalChildrenHeight / 2;
+
+    const createdNodes: Node[] = Array.from({ length: branchCount }).map((_, index) => {
+      const childId = `${nodeId}-child-${now}-${index}`;
+      childIds.push(childId);
+      const childY = firstChildY + index * (NODE_HEIGHT + NODE_GAP_Y);
+      return {
+        id: childId,
+        x: childX,
+        y: childY,
+        context: prompt,
+        modelResponse: null,
+        prompt: '',
+        branchCount: 1 as const,
+        deepLevel: 1 as const,
+        isRoot: false,
+        isPlaying: true,
+        inputs: [],
+        outputs: [],
+      };
+    });
+
+    // 2. Add nodes to graph
     setGraph((prev) => {
-      const parentIndex = prev.nodes.findIndex((n) => n.id === nodeId);
-      if (parentIndex === -1) return prev;
-      const parent = prev.nodes[parentIndex];
-      const newNodes = [...prev.nodes];
-      
-      const childX = parent.x + NODE_WIDTH + NODE_GAP_X;
-      const parentCenterY = parent.y + NODE_HEIGHT / 2;
-      const totalChildrenHeight = branchCount * NODE_HEIGHT + (branchCount - 1) * NODE_GAP_Y;
-      const firstChildY = parentCenterY - totalChildrenHeight / 2;
-
-      const createdNodes: Node[] = Array.from({ length: branchCount }).map((_, index) => {
-        const childId = `${nodeId}-child-${now}-${index}`;
-        childIds.push(childId);
-        const childY = firstChildY + index * (NODE_HEIGHT + NODE_GAP_Y);
-        return {
-          id: childId,
-          x: childX,
-          y: childY,
-          context: source.prompt,
-          modelResponse: null,
-          prompt: '',
-          branchCount: 1, 
-          deepLevel: 1,
-          isRoot: false,
-          isPlaying: true,
-          inputs: [],
-          outputs: [],
-        };
-      });
-
-      newNodes.push(...createdNodes);
-
       const newConnections: Connection[] = createdNodes.map((child, index) => ({
         id: `conn-${child.id}`,
         fromNodeId: nodeId,
@@ -409,7 +409,7 @@ export function useWorkspaceModel(): WorkspaceModel {
       const uniqueNewConns = newConnections.filter((c) => !existingConnIds.has(c.id));
 
       return {
-        nodes: newNodes,
+        nodes: [...prev.nodes, ...createdNodes],
         connections: [...prev.connections, ...uniqueNewConns],
       };
     });
@@ -425,7 +425,7 @@ export function useWorkspaceModel(): WorkspaceModel {
         body: JSON.stringify({
           model: modelName,
           n: branchCount,
-          messages: [{ role: 'user', content: source.prompt }],
+          messages: [{ role: 'user', content: prompt }],
           temperature: 0.7,
         }),
       });
@@ -434,52 +434,114 @@ export function useWorkspaceModel(): WorkspaceModel {
       const data = await response.json();
       const choices = (data.choices ?? []).slice(0, branchCount);
 
-      // 4. Update with Response
+      // 4. Build recursive call data from createdNodes and API responses
+      const recursiveCallsData: Array<{
+        childId: string;
+        childPrompt: string;
+        childX: number;
+        childY: number;
+      }> = [];
+
+      // Process each child node with its response
+      createdNodes.forEach((createdNode, index) => {
+        const choice = choices[index];
+        const content = choice?.message?.content ?? '';
+        const responseText = typeof content === 'string' ? content : String(content);
+
+        if (deepLevel > 1) {
+          const childPrompt = `Продолжи и углуби этот ответ: ${responseText.slice(0, 200)}...`;
+          recursiveCallsData.push({
+            childId: createdNode.id,
+            childPrompt,
+            childX: createdNode.x,
+            childY: createdNode.y,
+          });
+        }
+      });
+
+      // 5. Update nodes with responses
       setGraph((prev) => ({
         ...prev,
         nodes: prev.nodes.map((node) => {
           const childIndex = childIds.indexOf(node.id);
           if (childIndex === -1) return node;
-          
+
           const choice = choices[childIndex];
           const content = choice?.message?.content ?? '';
           const responseText = typeof content === 'string' ? content : String(content);
-          
+
           return {
             ...node,
             modelResponse: responseText,
-            isPlaying: false,
+            isPlaying: deepLevel > 1, // Keep playing if we'll recurse
             prompt: deepLevel > 1 ? `Продолжи и углуби этот ответ: ${responseText.slice(0, 200)}...` : '',
-            branchCount: deepLevel > 1 ? 1 : node.branchCount,
-            deepLevel: deepLevel > 1 ? Math.max(1, deepLevel - 1) as 1 | 2 | 3 | 4 : 1,
           };
         }),
       }));
 
-      // 5. Recursive Call
-      if (deepLevel > 1) {
-        // Need to wait a bit or just trigger?
-        // Note: playNode is async, but we don't want to block UI. 
-        // Using void to fire and forget recursive branches? 
-        // Or await to track completion?
-        await Promise.all(childIds.map(async (childId) => {
-          await playNode({ nodeId: childId, apiKey, model: modelName });
+      // 6. Recursive calls with captured data (not from state)
+      if (deepLevel > 1 && recursiveCallsData.length > 0) {
+        const nextDeepLevel = Math.max(1, deepLevel - 1) as 1 | 2 | 3 | 4;
+        
+        await Promise.all(recursiveCallsData.map(async ({ childId, childPrompt, childX, childY }) => {
+          await executeNodeRecursive(
+            childId,
+            childPrompt,
+            1, // branchCount for recursive calls
+            nextDeepLevel,
+            childX,
+            childY,
+            apiKey,
+            modelName
+          );
+        }));
+
+        // Mark nodes as done playing after recursion completes
+        setGraph((prev) => ({
+          ...prev,
+          nodes: prev.nodes.map((node) => {
+            if (childIds.includes(node.id)) {
+              return { ...node, isPlaying: false };
+            }
+            return node;
+          }),
         }));
       }
     } catch (error) {
-       const errorMessage = error instanceof Error ? error.message : 'Ошибка выполнения';
-       showToast(errorMessage, 'error');
-       setGraph((prev) => ({
-         ...prev,
-         nodes: prev.nodes.map((node) => {
-           if (childIds.includes(node.id)) {
-             return { ...node, isPlaying: false, modelResponse: `⚠️ ${errorMessage}`, error: errorMessage };
-           }
-           return node;
-         }),
-       }));
+      const errorMessage = error instanceof Error ? error.message : 'Ошибка выполнения';
+      showToast(errorMessage, 'error');
+      setGraph((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((node) => {
+          if (childIds.includes(node.id)) {
+            return { ...node, isPlaying: false, modelResponse: `⚠️ ${errorMessage}`, error: errorMessage };
+          }
+          return node;
+        }),
+      }));
     }
-  }, [graph.nodes, setGraph, showToast]); // Careful with deps here
+  }, [setGraph, showToast]);
+
+  const playNode = useCallback(async ({ nodeId, apiKey, model: modelName }: { nodeId: string; apiKey: string; model: string }) => {
+    // Get source node data from current state
+    const source = graph.nodes.find((n) => n.id === nodeId);
+    if (!source || !apiKey) return;
+    if (!source.prompt.trim()) {
+      showToast('Введите промпт перед запуском', 'error');
+      return;
+    }
+
+    await executeNodeRecursive(
+      nodeId,
+      source.prompt,
+      source.branchCount,
+      source.deepLevel,
+      source.x,
+      source.y,
+      apiKey,
+      modelName
+    );
+  }, [graph.nodes, executeNodeRecursive, showToast]);
 
   const deleteNode = useCallback((nodeId: string) => {
     setGraph((prev) => {
@@ -557,7 +619,7 @@ export function useWorkspaceModel(): WorkspaceModel {
   const importChat = useCallback(async (file: File) => {
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
+      const data = JSON.parse(text) as ImportData;
       
       if (!Array.isArray(data.nodes) || !Array.isArray(data.connections)) {
         throw new Error('Invalid format: nodes or connections array missing');
@@ -578,10 +640,8 @@ export function useWorkspaceModel(): WorkspaceModel {
         updatedAt: Date.now(),
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const importedNodes = (data.nodes as any[]).map((n) => ({ ...n, chatId: newChatId })) as Node[];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const importedConnections = (data.connections as any[]).map((c) => ({ ...c, chatId: newChatId })) as Connection[];
+      const importedNodes = data.nodes.map((n) => ({ ...n, chatId: newChatId }));
+      const importedConnections = data.connections.map((c) => ({ ...c, chatId: newChatId }));
 
       await saveChat(newChat);
       await saveNodesByChat(newChatId, importedNodes);

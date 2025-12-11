@@ -116,11 +116,13 @@
      ═══════════════════════════════════════════════════════════════ */
   
   --z-base: 0;
-  --z-dropdown: 10;
-  --z-sticky: 20;
-  --z-overlay: 30;
-  --z-modal: 40;
-  --z-toast: 50;
+  --z-canvas-ui: 10;              /* Minimap, Toolbar */
+  --z-dropdown: 20;
+  --z-sticky: 30;
+  --z-overlay: 100;               /* Settings overlay */
+  --z-modal: 200;                 /* Modals, Command Palette */
+  --z-context-menu: 300;          /* Context menus */
+  --z-toast: 9999;                /* Toast notifications */
   
   /* ═══════════════════════════════════════════════════════════════
      NODE SPECIFIC
@@ -135,4 +137,23 @@
   --node-context-lines-collapsed: 3;
   --node-response-lines-collapsed: 15;
   --node-prompt-lines-collapsed: 6;
+
+  /* ═══════════════════════════════════════════════════════════════
+     CANVAS UI POSITIONING
+     ═══════════════════════════════════════════════════════════════ */
+  
+  /* Consistent spacing for floating UI elements on canvas */
+  --canvas-ui-inset: 16px;           /* Distance from canvas edges */
+  --canvas-ui-gap: 12px;             /* Gap between UI elements */
+  
+  /* Minimap dimensions */
+  --minimap-width: 140px;
+  --minimap-height: 90px;
+  
+  /* Toolbar dimensions */
+  --toolbar-height: 40px;
+  
+  /* Settings panel */
+  --settings-panel-width: 360px;
+  --settings-panel-max-height: 400px;
 }

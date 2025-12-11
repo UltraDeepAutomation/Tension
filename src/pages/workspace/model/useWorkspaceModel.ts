@@ -290,15 +290,21 @@ export function useWorkspaceModel(): WorkspaceModel {
 
       newNodes.push(...created);
 
+      // Сохраняем connections для добавления после setNodes
       const newConnections: Connection[] = created.map((child, index) => ({
-        id: `${nodeId}->${child.id}`,
+        id: `conn-${child.id}`, // Уникальный ID на основе child.id
         fromNodeId: nodeId,
         fromPortIndex: index,
         toNodeId: child.id,
         toPortIndex: 0,
       }));
 
-      setConnections((prev) => [...prev, ...newConnections]);
+      // Добавляем connections с проверкой на дубликаты
+      setConnections((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const uniqueNew = newConnections.filter((c) => !existingIds.has(c.id));
+        return [...prev, ...uniqueNew];
+      });
 
       return newNodes;
     });

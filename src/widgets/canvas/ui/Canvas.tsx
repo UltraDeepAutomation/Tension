@@ -142,9 +142,10 @@ export const Canvas: React.FC<CanvasProps> = ({
     const PORT_SIZE = 8;
     const PORT_GAP = 6;
     const PORTS_TOP = 50; // CSS: top: 50px
+    const PORT_Y_OFFSET = 1; // Сдвиг вниз для центрирования соединений
     
     // Y позиция центра конкретного порта
-    const portCenterY = PORTS_TOP + portIndex * (PORT_SIZE + PORT_GAP) + PORT_SIZE / 2;
+    const portCenterY = PORTS_TOP + portIndex * (PORT_SIZE + PORT_GAP) + PORT_SIZE / 2 + PORT_Y_OFFSET;
 
     // X позиция — центр порта на краю ноды
     const x = side === 'left' ? node.x : node.x + NODE_WIDTH;

@@ -3,25 +3,67 @@ import { openDB, IDBPDatabase } from 'idb';
 export type TensionDb = IDBPDatabase<unknown>;
 
 const DB_NAME = 'tension-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
+
+export interface ChatRecord {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface NodeRecord {
+  id: string;
+  chatId: string;
+  [key: string]: unknown;
+}
+
+export interface ConnectionRecord {
+  id: string;
+  chatId: string;
+  [key: string]: unknown;
+}
 
 export async function getTensionDb(): Promise<TensionDb> {
   return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
+    upgrade(db, oldVersion) {
+      // Settings store
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings');
       }
-      if (!db.objectStoreNames.contains('threads')) {
-        const store = db.createObjectStore('threads', { keyPath: 'id' });
+      
+      // Chats store (renamed from threads)
+      if (!db.objectStoreNames.contains('chats')) {
+        const store = db.createObjectStore('chats', { keyPath: 'id' });
         store.createIndex('by-updatedAt', 'updatedAt');
       }
+      
+      // Nodes store with chatId index
       if (!db.objectStoreNames.contains('nodes')) {
         const store = db.createObjectStore('nodes', { keyPath: 'id' });
-        store.createIndex('by-threadId', 'threadId');
+        store.createIndex('by-chatId', 'chatId');
+      } else if (oldVersion < 3) {
+        // Add chatId index if upgrading
+        const tx = (db as any).transaction('nodes', 'readwrite');
+        if (tx && !tx.objectStore('nodes').indexNames.contains('by-chatId')) {
+          tx.objectStore('nodes').createIndex('by-chatId', 'chatId');
+        }
       }
 
+      // Connections store with chatId index
       if (!db.objectStoreNames.contains('connections')) {
-        db.createObjectStore('connections', { keyPath: 'id' });
+        const store = db.createObjectStore('connections', { keyPath: 'id' });
+        store.createIndex('by-chatId', 'chatId');
+      } else if (oldVersion < 3) {
+        const tx = (db as any).transaction('connections', 'readwrite');
+        if (tx && !tx.objectStore('connections').indexNames.contains('by-chatId')) {
+          tx.objectStore('connections').createIndex('by-chatId', 'chatId');
+        }
+      }
+      
+      // Remove old threads store if exists
+      if (db.objectStoreNames.contains('threads')) {
+        db.deleteObjectStore('threads');
       }
     },
   });

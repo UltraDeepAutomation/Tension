@@ -232,7 +232,15 @@ export function useWorkspaceModel(): WorkspaceModel {
   };
 
   const playNode = async ({ nodeId, apiKey, model: modelName }: { nodeId: string; apiKey: string; model: string }) => {
-    const source = nodes.find((n) => n.id === nodeId);
+    // Получаем актуальное состояние ноды через Promise + setNodes
+    const source = await new Promise<Node | undefined>((resolve) => {
+      setNodes((prev) => {
+        const found = prev.find((n) => n.id === nodeId);
+        resolve(found);
+        return prev; // Не меняем состояние
+      });
+    });
+    
     if (!source || !apiKey) return;
 
     const branchCount = source.branchCount;
@@ -323,7 +331,9 @@ export function useWorkspaceModel(): WorkspaceModel {
       const data = await response.json();
       const choices = (data.choices ?? []).slice(0, branchCount);
 
-      // 3. Заполняем ответы в дочерних нодах
+      // 3. Заполняем ответы в дочерних нодах — ВСЕГДА показываем ответ
+      const responseContents: Record<string, string> = {};
+      
       setNodes((prev) =>
         prev.map((node) => {
           const childIndex = childIds.indexOf(node.id);
@@ -331,35 +341,29 @@ export function useWorkspaceModel(): WorkspaceModel {
 
           const choice = choices[childIndex];
           const content = choice?.message?.content ?? '';
+          const responseText = typeof content === 'string' ? content : String(content);
+          
+          // Сохраняем для использования в prompt
+          responseContents[node.id] = responseText;
 
           return {
             ...node,
-            modelResponse: typeof content === 'string' ? content : String(content),
-            // Если deep > 1, оставляем isPlaying: true для продолжения
-            isPlaying: deepLevel > 1,
-            // Устанавливаем prompt для автоматического продолжения
-            prompt: deepLevel > 1 ? `Продолжи и углуби этот ответ: ${content.slice(0, 200)}...` : '',
+            modelResponse: responseText,
+            isPlaying: false, // Всегда показываем ответ
+            // Если deep > 1, заполняем prompt для продолжения
+            prompt: deepLevel > 1 ? `Продолжи и углуби этот ответ: ${responseText.slice(0, 200)}...` : '',
+            // Устанавливаем branchCount и deepLevel для следующего уровня
+            branchCount: deepLevel > 1 ? 1 : node.branchCount,
+            deepLevel: deepLevel > 1 ? Math.max(1, deepLevel - 1) as 1 | 2 | 3 | 4 : 1,
           };
         })
       );
 
-      // 4. Если deep > 1, рекурсивно запускаем playNode на дочерних нодах
+      // 4. Если deep > 1, сразу запускаем playNode на дочерних нодах (без задержки)
       if (deepLevel > 1) {
-        // Небольшая задержка для визуального эффекта
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        
         // Запускаем параллельно для всех дочерних нод
         await Promise.all(
           childIds.map(async (childId) => {
-            // Обновляем deepLevel дочерней ноды перед запуском
-            setNodes((prev) =>
-              prev.map((node) =>
-                node.id === childId
-                  ? { ...node, deepLevel: Math.max(1, deepLevel - 1) as 1 | 2 | 3 | 4, branchCount: 1 }
-                  : node
-              )
-            );
-            // Рекурсивный вызов
             await playNode({ nodeId: childId, apiKey, model: modelName });
           })
         );

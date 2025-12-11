@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { CanvasState, defaultCanvasState } from '@/entities/canvas/model/types';
 import { Settings } from '@/entities/settings/model/types';
 import { Connection, Node } from '@/entities/node/model/types';
@@ -15,6 +15,7 @@ import {
   ChatRecord,
 } from '@/shared/db/tensionDb';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_GAP_X, NODE_GAP_Y } from '@/shared/config/constants';
+import { useHistory } from '@/shared/lib/hooks/useHistory';
 
 export interface WorkspaceState {
   canvas: CanvasState;
@@ -24,6 +25,8 @@ export interface WorkspaceState {
   chats: ChatRecord[];
   currentChatId: string | null;
   isSaving: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export interface WorkspaceModel {
@@ -36,7 +39,7 @@ export interface WorkspaceModel {
     centerCanvas: () => void;
     panCanvas: (dx: number, dy: number) => void;
     setSettingsModel: (model: string) => void;
-    updateNodePosition: (id: string, x: number, y: number) => void;
+    updateNodePosition: (id: string, x: number, y: number, isTransient?: boolean) => void;
     updateNodePrompt: (id: string, prompt: string) => void;
     updateNodeBranchCount: (id: string, count: 1 | 2 | 3 | 4) => void;
     updateNodeDeepLevel: (id: string, level: 1 | 2 | 3 | 4) => void;
@@ -49,14 +52,27 @@ export interface WorkspaceModel {
     duplicateNode: (nodeId: string) => void;
     exportChat: () => void;
     importChat: (file: File) => Promise<void>;
+    undo: () => void;
+    redo: () => void;
   };
 }
 
 export function useWorkspaceModel(): WorkspaceModel {
   const [canvas, setCanvas] = React.useState<CanvasState>(defaultCanvasState);
   const [model, setModel] = React.useState<string>('gpt-4.1');
-  const [nodes, setNodes] = React.useState<Node[]>([]);
-  const [connections, setConnections] = React.useState<Connection[]>([]);
+  
+  // History for Graph (Nodes + Connections)
+  const { 
+    state: graph, 
+    set: setGraph, 
+    setTransient: setGraphTransient, 
+    undo, 
+    redo, 
+    canUndo, 
+    canRedo,
+    setHistory: initGraphHistory 
+  } = useHistory<{ nodes: Node[]; connections: Connection[] }>({ nodes: [], connections: [] });
+
   const [chats, setChats] = React.useState<ChatRecord[]>([]);
   const [currentChatId, setCurrentChatId] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -110,6 +126,9 @@ export function useWorkspaceModel(): WorkspaceModel {
           };
           await saveNodesByChat(newChatId, [root]);
           await saveConnectionsByChat(newChatId, []);
+          
+          // Initial history state
+          initGraphHistory({ nodes: [root], connections: [] });
         }
 
         if (!activeChatId || !chatList.find(c => c.id === activeChatId)) {
@@ -119,13 +138,12 @@ export function useWorkspaceModel(): WorkspaceModel {
         setChats(chatList);
         setCurrentChatId(activeChatId || null);
 
-        if (activeChatId) {
+        if (activeChatId && chatList.length > 0) {
           const [nodesForChat, connsForChat] = await Promise.all([
             readNodesByChat<Node>(activeChatId),
             readConnectionsByChat<Connection>(activeChatId),
           ]);
-          setNodes(nodesForChat);
-          setConnections(connsForChat);
+          initGraphHistory({ nodes: nodesForChat, connections: connsForChat });
         }
       } catch (error) {
         console.error('Bootstrap error:', error);
@@ -134,27 +152,27 @@ export function useWorkspaceModel(): WorkspaceModel {
 
     void bootstrap();
     return () => { cancelled = true; };
-  }, []);
+  }, [initGraphHistory]);
 
   React.useEffect(() => {
     if (!currentChatId) return;
     setIsSaving(true);
     const timeoutId = setTimeout(async () => {
-      await saveNodesByChat(currentChatId, nodes);
+      await saveNodesByChat(currentChatId, graph.nodes);
       setIsSaving(false);
     }, 500);
     return () => clearTimeout(timeoutId);
-  }, [nodes, currentChatId]);
+  }, [graph.nodes, currentChatId]);
 
   React.useEffect(() => {
     if (!currentChatId) return;
     setIsSaving(true);
     const timeoutId = setTimeout(async () => {
-      await saveConnectionsByChat(currentChatId, connections);
+      await saveConnectionsByChat(currentChatId, graph.connections);
       setIsSaving(false);
     }, 500);
     return () => clearTimeout(timeoutId);
-  }, [connections, currentChatId]);
+  }, [graph.connections, currentChatId]);
 
   React.useEffect(() => {
     if (currentChatId) void saveSetting('current_chat_id', currentChatId);
@@ -168,18 +186,18 @@ export function useWorkspaceModel(): WorkspaceModel {
     void saveSetting('settings_model', model);
   }, [model]);
 
-  const setTool = (tool: CanvasState['tool']) => {
+  const setTool = useCallback((tool: CanvasState['tool']) => {
     setCanvas((prev) => ({ ...prev, tool }));
-  };
+  }, []);
 
-  const changeZoom = (delta: number) => {
+  const changeZoom = useCallback((delta: number) => {
     setCanvas((prev) => {
       const nextZoom = Math.min(2, Math.max(0.25, prev.zoom + delta));
       return { ...prev, zoom: nextZoom };
     });
-  };
+  }, []);
 
-  const zoomAtPoint = (delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => {
+  const zoomAtPoint = useCallback((delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => {
     const MAX_OFFSET = 5000;
     setCanvas((prev) => {
       const oldZoom = prev.zoom;
@@ -193,42 +211,55 @@ export function useWorkspaceModel(): WorkspaceModel {
       const newOffsetY = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, mouseY / newZoom - contentY));
       return { ...prev, zoom: newZoom, offsetX: newOffsetX, offsetY: newOffsetY };
     });
-  };
+  }, []);
 
-  const resetZoom = () => {
+  const resetZoom = useCallback(() => {
     setCanvas((prev) => ({ ...prev, zoom: defaultCanvasState.zoom }));
-  };
+  }, []);
 
-  const panCanvas = (dx: number, dy: number) => {
+  const panCanvas = useCallback((dx: number, dy: number) => {
     const MAX_OFFSET = 5000;
     setCanvas((prev) => ({
       ...prev,
       offsetX: Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, prev.offsetX + dx)),
       offsetY: Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, prev.offsetY + dy)),
     }));
-  };
+  }, []);
 
-  const setSettingsModel = (next: string) => {
+  const setSettingsModel = useCallback((next: string) => {
     setModel(next);
-  };
+  }, []);
 
-  const updateNodePosition = (id: string, x: number, y: number) => {
-    setNodes((prev) => prev.map((node) => (node.id === id ? { ...node, x, y } : node)));
-  };
+  const updateNodePosition = useCallback((id: string, x: number, y: number, isTransient = false) => {
+    const setter = isTransient ? setGraphTransient : setGraph;
+    setter((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => (node.id === id ? { ...node, x, y } : node)),
+    }));
+  }, [setGraph, setGraphTransient]);
 
-  const updateNodePrompt = (id: string, prompt: string) => {
-    setNodes((prev) => prev.map((node) => (node.id === id ? { ...node, prompt } : node)));
-  };
+  const updateNodePrompt = useCallback((id: string, prompt: string) => {
+    setGraph((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => (node.id === id ? { ...node, prompt } : node)),
+    }));
+  }, [setGraph]);
 
-  const updateNodeBranchCount = (id: string, count: 1 | 2 | 3 | 4) => {
-    setNodes((prev) => prev.map((node) => (node.id === id ? { ...node, branchCount: count } : node)));
-  };
+  const updateNodeBranchCount = useCallback((id: string, count: 1 | 2 | 3 | 4) => {
+    setGraph((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => (node.id === id ? { ...node, branchCount: count } : node)),
+    }));
+  }, [setGraph]);
 
-  const updateNodeDeepLevel = (id: string, level: 1 | 2 | 3 | 4) => {
-    setNodes((prev) => prev.map((node) => (node.id === id ? { ...node, deepLevel: level } : node)));
-  };
+  const updateNodeDeepLevel = useCallback((id: string, level: 1 | 2 | 3 | 4) => {
+    setGraph((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => (node.id === id ? { ...node, deepLevel: level } : node)),
+    }));
+  }, [setGraph]);
 
-  const createChat = async () => {
+  const createChat = useCallback(async () => {
     const newChatId = `chat-${Date.now()}`;
     const newChat: ChatRecord = {
       id: newChatId,
@@ -254,25 +285,25 @@ export function useWorkspaceModel(): WorkspaceModel {
     await saveNodesByChat(newChatId, [root]);
     await saveConnectionsByChat(newChatId, []);
     setChats(prev => [newChat, ...prev]);
-    setNodes([root]);
-    setConnections([]);
+    
+    // Switch context
+    initGraphHistory({ nodes: [root], connections: [] });
     setCanvas(defaultCanvasState);
     setCurrentChatId(newChatId);
-  };
+  }, [initGraphHistory]);
 
-  const selectChat = async (chatId: string) => {
+  const selectChat = useCallback(async (chatId: string) => {
     if (chatId === currentChatId) return;
     const [nodesForChat, connsForChat] = await Promise.all([
       readNodesByChat<Node>(chatId),
       readConnectionsByChat<Connection>(chatId),
     ]);
-    setNodes(nodesForChat);
-    setConnections(connsForChat);
+    initGraphHistory({ nodes: nodesForChat, connections: connsForChat });
     setCanvas(defaultCanvasState);
     setCurrentChatId(chatId);
-  };
+  }, [currentChatId, initGraphHistory]);
 
-  const deleteChatAction = async (chatId: string) => {
+  const deleteChatAction = useCallback(async (chatId: string) => {
     await deleteChat(chatId);
     setChats(prev => prev.filter(c => c.id !== chatId));
     if (currentChatId === chatId) {
@@ -283,9 +314,9 @@ export function useWorkspaceModel(): WorkspaceModel {
         createChat();
       }
     }
-  };
+  }, [chats, currentChatId, createChat, selectChat]);
 
-  const clearData = () => {
+  const clearData = useCallback(() => {
     if (!currentChatId) return;
     const root: Node = {
       id: 'root',
@@ -301,39 +332,33 @@ export function useWorkspaceModel(): WorkspaceModel {
       inputs: [],
       outputs: [],
     };
-    setNodes([root]);
-    setConnections([]);
+    setGraph({ nodes: [root], connections: [] });
     setCanvas(defaultCanvasState);
-  };
+  }, [currentChatId, setGraph]);
 
-  const playNode = async ({ nodeId, apiKey, model: modelName }: { nodeId: string; apiKey: string; model: string }) => {
-    const source = await new Promise<Node | undefined>((resolve) => {
-      setNodes((prev) => {
-        const found = prev.find((n) => n.id === nodeId);
-        resolve(found);
-        return prev;
-      });
-    });
-    
+  const playNode = useCallback(async ({ nodeId, apiKey, model: modelName }: { nodeId: string; apiKey: string; model: string }) => {
+    // 1. Prepare
+    const source = graph.nodes.find((n) => n.id === nodeId);
     if (!source || !apiKey) return;
 
     const branchCount = source.branchCount;
     const deepLevel = source.deepLevel;
     const now = Date.now();
-
     const childIds: string[] = [];
-    
-    setNodes((prev) => {
-      const parentIndex = prev.findIndex((n) => n.id === nodeId);
+
+    // 2. Optimistic Update (Create structure)
+    setGraph((prev) => {
+      const parentIndex = prev.nodes.findIndex((n) => n.id === nodeId);
       if (parentIndex === -1) return prev;
-      const parent = prev[parentIndex];
-      const newNodes = [...prev];
+      const parent = prev.nodes[parentIndex];
+      const newNodes = [...prev.nodes];
+      
       const childX = parent.x + NODE_WIDTH + NODE_GAP_X;
       const parentCenterY = parent.y + NODE_HEIGHT / 2;
       const totalChildrenHeight = branchCount * NODE_HEIGHT + (branchCount - 1) * NODE_GAP_Y;
       const firstChildY = parentCenterY - totalChildrenHeight / 2;
 
-      const created: Node[] = Array.from({ length: branchCount }).map((_, index) => {
+      const createdNodes: Node[] = Array.from({ length: branchCount }).map((_, index) => {
         const childId = `${nodeId}-child-${now}-${index}`;
         childIds.push(childId);
         const childY = firstChildY + index * (NODE_HEIGHT + NODE_GAP_Y);
@@ -353,8 +378,9 @@ export function useWorkspaceModel(): WorkspaceModel {
         };
       });
 
-      newNodes.push(...created);
-      const newConnections: Connection[] = created.map((child, index) => ({
+      newNodes.push(...createdNodes);
+
+      const newConnections: Connection[] = createdNodes.map((child, index) => ({
         id: `conn-${child.id}`,
         fromNodeId: nodeId,
         fromPortIndex: index,
@@ -362,15 +388,16 @@ export function useWorkspaceModel(): WorkspaceModel {
         toPortIndex: 0,
       }));
 
-      setConnections((prevConns) => {
-        const existingIds = new Set(prevConns.map((c) => c.id));
-        const uniqueNew = newConnections.filter((c) => !existingIds.has(c.id));
-        return [...prevConns, ...uniqueNew];
-      });
+      const existingConnIds = new Set(prev.connections.map((c) => c.id));
+      const uniqueNewConns = newConnections.filter((c) => !existingConnIds.has(c.id));
 
-      return newNodes;
+      return {
+        nodes: newNodes,
+        connections: [...prev.connections, ...uniqueNewConns],
+      };
     });
 
+    // 3. API Call
     try {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -390,13 +417,17 @@ export function useWorkspaceModel(): WorkspaceModel {
       const data = await response.json();
       const choices = (data.choices ?? []).slice(0, branchCount);
 
-      setNodes((prev) =>
-        prev.map((node) => {
+      // 4. Update with Response
+      setGraph((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((node) => {
           const childIndex = childIds.indexOf(node.id);
           if (childIndex === -1) return node;
+          
           const choice = choices[childIndex];
           const content = choice?.message?.content ?? '';
           const responseText = typeof content === 'string' ? content : String(content);
+          
           return {
             ...node,
             modelResponse: responseText,
@@ -405,71 +436,95 @@ export function useWorkspaceModel(): WorkspaceModel {
             branchCount: deepLevel > 1 ? 1 : node.branchCount,
             deepLevel: deepLevel > 1 ? Math.max(1, deepLevel - 1) as 1 | 2 | 3 | 4 : 1,
           };
-        })
-      );
+        }),
+      }));
 
+      // 5. Recursive Call
       if (deepLevel > 1) {
+        // Need to wait a bit or just trigger?
+        // Note: playNode is async, but we don't want to block UI. 
+        // Using void to fire and forget recursive branches? 
+        // Or await to track completion?
         await Promise.all(childIds.map(async (childId) => {
           await playNode({ nodeId: childId, apiKey, model: modelName });
         }));
       }
     } catch (error) {
        const errorMessage = error instanceof Error ? error.message : 'Ошибка выполнения';
-       setNodes((prev) =>
-        prev.map((node) => {
-          if (childIds.includes(node.id)) {
-            return { ...node, isPlaying: false, modelResponse: `⚠️ ${errorMessage}`, error: errorMessage };
-          }
-          return node;
-        })
-      );
+       setGraph((prev) => ({
+         ...prev,
+         nodes: prev.nodes.map((node) => {
+           if (childIds.includes(node.id)) {
+             return { ...node, isPlaying: false, modelResponse: `⚠️ ${errorMessage}`, error: errorMessage };
+           }
+           return node;
+         }),
+       }));
     }
-  };
+  }, [graph.nodes, setGraph]); // Careful with deps here
 
-  const deleteNode = (nodeId: string) => {
-    const nodesToDelete = new Set<string>();
-    const stack = [nodeId];
-    while (stack.length > 0) {
-      const currentId = stack.pop()!;
-      nodesToDelete.add(currentId);
-      const children = connections
-        .filter(c => c.fromNodeId === currentId)
-        .map(c => c.toNodeId);
-      stack.push(...children);
-    }
-    setNodes(prev => prev.filter(n => !nodesToDelete.has(n.id)));
-    setConnections(prev => prev.filter(c => 
-      !nodesToDelete.has(c.fromNodeId) && !nodesToDelete.has(c.toNodeId)
-    ));
-  };
+  const deleteNode = useCallback((nodeId: string) => {
+    setGraph((prev) => {
+      const nodesToDelete = new Set<string>();
+      const stack = [nodeId];
+      // Build dependency graph from current connections to find descendants
+      // Optimization: Build adjacency list once?
+      // Given size, simple traversal is fine.
+      
+      const allConnections = prev.connections;
+      
+      while (stack.length > 0) {
+        const currentId = stack.pop()!;
+        if (nodesToDelete.has(currentId)) continue;
+        nodesToDelete.add(currentId);
+        
+        const children = allConnections
+          .filter(c => c.fromNodeId === currentId)
+          .map(c => c.toNodeId);
+        stack.push(...children);
+      }
 
-  const duplicateNode = (nodeId: string) => {
-    const nodeToDuplicate = nodes.find((n) => n.id === nodeId);
-    if (!nodeToDuplicate) return;
+      return {
+        nodes: prev.nodes.filter(n => !nodesToDelete.has(n.id)),
+        connections: prev.connections.filter(c => 
+          !nodesToDelete.has(c.fromNodeId) && !nodesToDelete.has(c.toNodeId)
+        ),
+      };
+    });
+  }, [setGraph]);
 
-    const newNode: Node = {
-      ...nodeToDuplicate,
-      id: crypto.randomUUID(),
-      x: nodeToDuplicate.x + 50,
-      y: nodeToDuplicate.y + 50,
-      isRoot: false, // Duplicates are never root
-      isPlaying: false,
-      modelResponse: nodeToDuplicate.modelResponse,
-      context: nodeToDuplicate.context,
-      prompt: nodeToDuplicate.prompt,
-    };
+  const duplicateNode = useCallback((nodeId: string) => {
+    setGraph((prev) => {
+      const nodeToDuplicate = prev.nodes.find((n) => n.id === nodeId);
+      if (!nodeToDuplicate) return prev;
 
-    setNodes((prev) => [...prev, newNode]);
-  };
+      const newNode: Node = {
+        ...nodeToDuplicate,
+        id: crypto.randomUUID(),
+        x: nodeToDuplicate.x + 50,
+        y: nodeToDuplicate.y + 50,
+        isRoot: false,
+        isPlaying: false,
+        modelResponse: nodeToDuplicate.modelResponse,
+        context: nodeToDuplicate.context,
+        prompt: nodeToDuplicate.prompt,
+      };
 
-  const exportChat = () => {
+      return {
+        ...prev,
+        nodes: [...prev.nodes, newNode],
+      };
+    });
+  }, [setGraph]);
+
+  const exportChat = useCallback(() => {
     if (!currentChatId) return;
     const data = {
       version: 1,
       timestamp: Date.now(),
       chatId: currentChatId,
-      nodes,
-      connections,
+      nodes: graph.nodes,
+      connections: graph.connections,
       canvas, 
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -479,9 +534,9 @@ export function useWorkspaceModel(): WorkspaceModel {
     a.download = `tension-chat-${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [currentChatId, graph, canvas]);
 
-  const importChat = async (file: File) => {
+  const importChat = useCallback(async (file: File) => {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
@@ -490,7 +545,6 @@ export function useWorkspaceModel(): WorkspaceModel {
         throw new Error('Invalid format: nodes or connections array missing');
       }
 
-      // Basic schema validation
       if (data.nodes.length > 0) {
         const n = data.nodes[0];
         if (!n.id || typeof n.x !== 'number' || typeof n.y !== 'number') {
@@ -507,9 +561,9 @@ export function useWorkspaceModel(): WorkspaceModel {
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const importedNodes = data.nodes.map((n: any) => ({ ...n, chatId: newChatId }));
+      const importedNodes = (data.nodes as any[]).map((n) => ({ ...n, chatId: newChatId })) as Node[];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const importedConnections = data.connections.map((c: any) => ({ ...c, chatId: newChatId }));
+      const importedConnections = (data.connections as any[]).map((c) => ({ ...c, chatId: newChatId })) as Connection[];
 
       await saveChat(newChat);
       await saveNodesByChat(newChatId, importedNodes);
@@ -517,8 +571,9 @@ export function useWorkspaceModel(): WorkspaceModel {
 
       setChats(prev => [newChat, ...prev]);
       setCurrentChatId(newChatId);
-      setNodes(importedNodes);
-      setConnections(importedConnections);
+      
+      initGraphHistory({ nodes: importedNodes, connections: importedConnections });
+      
       if (data.canvas) {
          setCanvas(data.canvas);
       } else {
@@ -529,15 +584,15 @@ export function useWorkspaceModel(): WorkspaceModel {
       console.error('Import failed', e);
       alert('Import failed: ' + (e instanceof Error ? e.message : String(e)));
     }
-  };
+  }, [initGraphHistory]);
 
-  const centerCanvas = () => {
-    if (nodes.length === 0) {
+  const centerCanvas = useCallback(() => {
+    if (graph.nodes.length === 0) {
       setCanvas((prev) => ({ ...prev, offsetX: 0, offsetY: 0, zoom: 1 }));
       return;
     }
-    const xs = nodes.map(n => n.x);
-    const ys = nodes.map(n => n.y);
+    const xs = graph.nodes.map(n => n.x);
+    const ys = graph.nodes.map(n => n.y);
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs) + NODE_WIDTH;
     const minY = Math.min(...ys);
@@ -555,16 +610,18 @@ export function useWorkspaceModel(): WorkspaceModel {
       offsetX: (viewportW / 2) / fitZoom - centerX,
       offsetY: (viewportH / 2) / fitZoom - centerY,
     }));
-  };
+  }, [graph.nodes]);
 
   const state: WorkspaceState = {
     canvas,
     settings: { model },
-    nodes,
-    connections,
+    nodes: graph.nodes,
+    connections: graph.connections,
     chats,
     currentChatId,
     isSaving,
+    canUndo,
+    canRedo,
   };
 
   return {
@@ -590,6 +647,8 @@ export function useWorkspaceModel(): WorkspaceModel {
       duplicateNode,
       exportChat,
       importChat,
+      undo,
+      redo,
     },
   };
 }

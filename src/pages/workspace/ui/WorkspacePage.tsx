@@ -6,6 +6,7 @@ import { SettingsPanel } from '@/widgets/settings-panel/ui/SettingsPanel';
 import { useWorkspaceModel } from '@/pages/workspace/model/useWorkspaceModel';
 import { useOpenAIKey } from '@/features/manage-openai-key/model/useOpenAIKey';
 import { CommandPalette, CommandAction } from '@/widgets/command-palette/ui/CommandPalette';
+import { Minimap } from '@/widgets/minimap/ui/Minimap';
 
 export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
@@ -53,6 +54,8 @@ export const WorkspacePage: React.FC = () => {
 
   const commandActions: CommandAction[] = React.useMemo(() => [
     { id: 'new-chat', label: 'Create New Chat', perform: actions.createChat, icon: '➕' },
+    { id: 'undo', label: 'Undo', perform: actions.undo, icon: '↩️', shortcut: ['⌘', 'Z'] },
+    { id: 'redo', label: 'Redo', perform: actions.redo, icon: '↪️', shortcut: ['⌘', '⇧', 'Z'] },
     { id: 'export', label: 'Export Chat to JSON', perform: actions.exportChat, icon: '📤' },
     { id: 'fit-view', label: 'Fit View', perform: actions.centerCanvas, icon: '⤢' },
     { id: 'zoom-in', label: 'Zoom In', perform: () => actions.changeZoom(0.1), icon: '🔍' },
@@ -105,6 +108,11 @@ export const WorkspacePage: React.FC = () => {
           onZoomOut={() => actions.changeZoom(-0.1)}
           onResetZoom={actions.resetZoom}
           onCenterCanvas={actions.centerCanvas}
+        />
+        <Minimap
+          nodes={state.nodes}
+          canvasState={state.canvas}
+          onNavigate={actions.panCanvas}
         />
         <SettingsPanel
           isOpen={isSettingsOpen}

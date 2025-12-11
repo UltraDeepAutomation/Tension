@@ -9,7 +9,7 @@ interface CanvasProps {
   canvasState: CanvasState;
   nodes: Node[];
   connections: Connection[];
-  onNodePositionChange: (id: string, x: number, y: number) => void;
+  onNodePositionChange: (id: string, x: number, y: number, isTransient?: boolean) => void;
   onNodePromptChange: (id: string, prompt: string) => void;
   onNodeBranchCountChange: (id: string, count: 1 | 2 | 3 | 4) => void;
   onNodeDeepLevelChange: (id: string, level: 1 | 2 | 3 | 4) => void;
@@ -167,7 +167,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         // We have to depend on 'nodes'.
         const node = nodes.find((n) => n.id === draggingNodeId);
         if (node) {
-          onNodePositionChange(draggingNodeId, node.x + dx, node.y + dy);
+          onNodePositionChange(draggingNodeId, node.x + dx, node.y + dy, true);
         }
       }
 
@@ -184,6 +184,13 @@ export const Canvas: React.FC<CanvasProps> = ({
     };
 
     const handleWindowMouseUp = () => {
+      if (draggingNodeId) {
+        // Commit the final position to history
+        const node = nodes.find((n) => n.id === draggingNodeId);
+        if (node) {
+           onNodePositionChange(draggingNodeId, node.x, node.y, false);
+        }
+      }
       setDraggingNodeId(null);
       nodeDragLastPos.current = null;
       setIsPanning(false);
@@ -242,8 +249,16 @@ export const Canvas: React.FC<CanvasProps> = ({
       const toX = toNode.x;
       const toY = toNode.y + toPortY;
 
-      const cx = (fromX + toX) / 2;
-      const path = `M ${fromX} ${fromY} C ${cx} ${fromY}, ${cx} ${toY}, ${toX} ${toY}`;
+      // Smart(er) Routing
+      const dist = Math.abs(toX - fromX);
+      // Standard curvature for typical distance, reduced for very close nodes
+      const curvature = Math.max(40, Math.min(dist * 0.5, 150));
+      
+      const cp1X = fromX + curvature;
+      const cp2X = toX - curvature;
+
+      // Use the standard cubic bezier: start -> cp1 -> cp2 -> end
+      const path = `M ${fromX} ${fromY} C ${cp1X} ${fromY}, ${cp2X} ${toY}, ${toX} ${toY}`;
 
       return (
         <path

@@ -1,12 +1,12 @@
 // Node dimensions (must match CSS tokens)
 export const NODE_WIDTH = 420;   // --node-width
-export const NODE_HEIGHT = 160;  // --node-min-height
+export const NODE_HEIGHT = 500;  // Max collapsed height with all sections filled
 export const PORT_SIZE = 8;
 export const PORT_GAP = 6;
 export const PORTS_TOP = 50;
 export const PORT_Y_OFFSET = 1;
-export const NODE_GAP_X = 120;   // --node-gap-x
-export const NODE_GAP_Y = 50;    // --node-gap-y
+export const NODE_GAP_X = 200;   // Horizontal gap between nodes (increased)
+export const NODE_GAP_Y = 120;   // Vertical gap between nodes (increased)
 
 // Zoom settings
 export const ZOOM_MIN = 0.25;

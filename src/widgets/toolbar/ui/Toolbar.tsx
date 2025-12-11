@@ -1,19 +1,18 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import type { ToolMode } from '@/entities/canvas/model/types';
-import { MousePointer2, Hand, Home, Undo2, Redo2, Save, Check, Loader2 } from 'lucide-react';
+import { MousePointer2, Hand, Home, Undo2, Redo2, Save, Check, Loader2, Circle, Download, Upload } from 'lucide-react';
 
-type SaveStatus = 'idle' | 'saving' | 'saved';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'unsaved';
 
 interface ToolbarProps {
   tool: ToolMode;
-  zoom: number;
   onToolChange: (tool: ToolMode) => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onResetZoom: () => void;
   onCenterCanvas: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  onSave?: () => void;
+  onExport?: () => void;
+  onImport?: (file: File) => void;
   canUndo?: boolean;
   canRedo?: boolean;
   saveStatus?: SaveStatus;
@@ -21,19 +20,31 @@ interface ToolbarProps {
 
 export const Toolbar: React.FC<ToolbarProps> = ({
   tool,
-  zoom,
   onToolChange,
-  onZoomIn,
-  onZoomOut,
-  onResetZoom,
   onCenterCanvas,
   onUndo,
   onRedo,
+  onSave,
+  onExport,
+  onImport,
   canUndo = false,
   canRedo = false,
-  saveStatus = 'idle',
+  saveStatus = 'saved',
 }) => {
-  const zoomLabel = `${Math.round(zoom * 100)}%`;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onImport) {
+      onImport(file);
+    }
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  };
 
   return (
     <div className="toolbar">
@@ -77,21 +88,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
       )}
 
-      <div className="toolbar-spacer" />
-
-      {/* Zoom Controls */}
-      <div className="toolbar-zoom">
-        <button className="toolbar-button" onClick={onZoomOut} title="Уменьшить">
-          −
-        </button>
-        <button className="toolbar-button" onClick={onResetZoom} title="Сбросить масштаб">
-          {zoomLabel}
-        </button>
-        <button className="toolbar-button" onClick={onZoomIn} title="Увеличить">
-          +
-        </button>
-      </div>
-
       <div className="toolbar-divider" />
 
       {/* Center */}
@@ -99,16 +95,66 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <Home size={16} />
       </button>
 
-      {/* Save Status */}
+      <div className="toolbar-divider" />
+
+      {/* Export/Import */}
+      {onExport && (
+        <button 
+          className="toolbar-button" 
+          onClick={onExport}
+          title="Экспорт JSON"
+        >
+          <Download size={16} />
+        </button>
+      )}
+      {onImport && (
+        <>
+          <button 
+            className="toolbar-button" 
+            onClick={handleImportClick}
+            title="Импорт JSON"
+          >
+            <Upload size={16} />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+          />
+        </>
+      )}
+
+      <div className="toolbar-spacer" />
+
+      {/* Save Button */}
       <button 
-        className={`toolbar-button ${saveStatus === 'saved' ? 'toolbar-button--success' : ''} ${saveStatus === 'saving' ? 'toolbar-button--saving' : ''}`}
-        disabled
-        title={saveStatus === 'saved' ? 'Сохранено' : saveStatus === 'saving' ? 'Сохранение...' : 'Автосохранение'}
+        className={`toolbar-button toolbar-save ${
+          saveStatus === 'saved' ? 'toolbar-save--saved' : ''
+        } ${
+          saveStatus === 'saving' ? 'toolbar-save--saving' : ''
+        } ${
+          saveStatus === 'unsaved' ? 'toolbar-save--unsaved' : ''
+        }`}
+        onClick={onSave}
+        disabled={saveStatus === 'saving' || saveStatus === 'saved'}
+        title={
+          saveStatus === 'saved' ? 'Сохранено' : 
+          saveStatus === 'saving' ? 'Сохранение...' : 
+          saveStatus === 'unsaved' ? 'Сохранить (⌘S)' :
+          'Сохранить'
+        }
       >
         {saveStatus === 'saving' ? (
           <Loader2 size={16} className="animate-spin" />
         ) : saveStatus === 'saved' ? (
           <Check size={16} />
+        ) : saveStatus === 'unsaved' ? (
+          <>
+            <Circle size={8} className="toolbar-save-dot" />
+            <Save size={16} />
+          </>
         ) : (
           <Save size={16} />
         )}

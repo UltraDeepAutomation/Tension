@@ -1,34 +1,35 @@
 import React from 'react';
 import type { Node } from '@/entities/node/model/types';
-import { IconPlay, IconX, IconZap, IconLayers, IconGrid } from '@/shared/ui/Icons';
-import { Select } from '@/shared/ui/Select';
+import { Play, Loader2 } from 'lucide-react';
 
 interface NodeCardProps {
   node: Node;
   isDragging: boolean;
+  isSelected?: boolean;
   onHeaderMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
   onPromptChange: (prompt: string) => void;
   onBranchCountChange: (count: 1 | 2 | 3 | 4) => void;
   onDeepLevelChange: (level: 1 | 2 | 3 | 4) => void;
   onPlay: () => void;
-  onDelete: () => void;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 /** Лимиты строк для коллапсинга */
-const CONTEXT_LINES_COLLAPSED = 3;
-const RESPONSE_LINES_COLLAPSED = 15;
+const CONTEXT_LINES_COLLAPSED = 2;   // Запрос сверху - 2 строки макс
+const RESPONSE_LINES_COLLAPSED = 10; // Ответ модели - 10 строк макс
 const PROMPT_MIN_ROWS = 2;
-const PROMPT_MAX_ROWS = 5;
+const PROMPT_MAX_ROWS = 3;            // Новый запрос - 3 строки макс
 
 export const NodeCard: React.FC<NodeCardProps> = React.memo(({
   node,
   isDragging,
+  isSelected = false,
   onHeaderMouseDown,
   onPromptChange,
   onBranchCountChange,
   onDeepLevelChange,
   onPlay,
-  onDelete,
+  onClick,
 }) => {
   const [isContextExpanded, setIsContextExpanded] = React.useState(false);
   const [isResponseExpanded, setIsResponseExpanded] = React.useState(false);
@@ -50,8 +51,9 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
   return (
     <div
       data-node-id={node.id}
-      className={`node ${node.isRoot ? 'node--root' : ''} ${isDragging ? 'node--dragging' : ''} ${node.isPlaying ? 'node--loading' : ''} ${hasError ? 'node--error' : ''}`}
+      className={`node ${node.isRoot ? 'node--root' : ''} ${isDragging ? 'node--dragging' : ''} ${node.isPlaying ? 'node--loading' : ''} ${hasError ? 'node--error' : ''} ${isSelected ? 'node--selected' : ''}`}
       style={{ left: node.x, top: node.y }}
+      onClick={onClick}
     >
       {/* Header */}
       <div className="node-header" onMouseDown={onHeaderMouseDown}>
@@ -64,21 +66,14 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
             onPlay();
           }}
           disabled={node.isPlaying}
+          title="Запустить (Enter)"
         >
-          {node.isPlaying ? <span className="spinner spinner--sm" /> : '▶'}
+          {node.isPlaying ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Play size={14} />
+          )}
         </button>
-        {!node.isRoot && (
-          <button
-            className="node-delete-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            title="Удалить ветку"
-          >
-            ×
-          </button>
-        )}
       </div>
 
       {/* Ports */}
@@ -125,7 +120,8 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
             className={`node-section-content ${isResponseExpanded ? '' : 'node-section-content--collapsed'}`}
             style={{ ['--max-lines' as string]: RESPONSE_LINES_COLLAPSED }}
           >
-            {node.isPlaying ? (
+            {/* Show loading only if playing AND no response yet */}
+            {node.isPlaying && !node.modelResponse ? (
               <div className="node-response-loading">
                 <span className="spinner" />
                 <span>Модель думает...</span>
@@ -134,7 +130,7 @@ export const NodeCard: React.FC<NodeCardProps> = React.memo(({
               node.modelResponse || <span className="node-placeholder">Ответ модели появится здесь</span>
             )}
           </div>
-          {!node.isPlaying && node.modelResponse && showResponseExpand && (
+          {node.modelResponse && showResponseExpand && (
             <button
               type="button"
               className="node-expand-button"

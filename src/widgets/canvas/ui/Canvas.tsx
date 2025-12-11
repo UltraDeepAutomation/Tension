@@ -40,7 +40,6 @@ export const Canvas: React.FC<CanvasProps> = ({
   onCenterCanvas,
   onResetZoom,
 }) => {
-  const zoomLabel = `${Math.round(canvasState.zoom * 100)}%`;
   const canvasRef = React.useRef<HTMLDivElement>(null);
 
   // Драг ноды
@@ -117,9 +116,13 @@ export const Canvas: React.FC<CanvasProps> = ({
                      target.tagName === 'svg';
 
     if (isCanvas) {
-      event.preventDefault();
-      panLastPos.current = { x: event.clientX, y: event.clientY };
-      setIsPanning(true);
+      // In hand mode OR when clicking empty canvas, allow panning
+      // In cursor mode, only pan if clicking on empty canvas (not nodes)
+      if (canvasState.tool === 'hand' || isCanvas) {
+        event.preventDefault();
+        panLastPos.current = { x: event.clientX, y: event.clientY };
+        setIsPanning(true);
+      }
     }
   };
 
@@ -275,12 +278,9 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   return (
     <main className="canvas-container" onContextMenu={handleContextMenu}>
-      <div className="canvas-toolbar-top">
-        <div className="canvas-zoom-indicator">Zoom: {zoomLabel}</div>
-      </div>
       <div
         ref={canvasRef}
-        className={`canvas-view ${isPanning ? 'canvas-view--panning' : ''}`}
+        className={`canvas-view ${canvasState.tool === 'hand' ? 'canvas-view--hand' : ''} ${isPanning ? 'canvas-view--panning' : ''}`}
         onMouseDown={handleCanvasMouseDown}
         style={{
           backgroundSize: `${24 * canvasState.zoom}px ${24 * canvasState.zoom}px`,
@@ -307,7 +307,6 @@ export const Canvas: React.FC<CanvasProps> = ({
               onBranchCountChange={(count) => onNodeBranchCountChange(node.id, count)}
               onDeepLevelChange={(level) => onNodeDeepLevelChange(node.id, level)}
               onPlay={() => onPlayNode(node.id)}
-              onDelete={() => onDeleteNode(node.id)}
             />
           ))}
         </div>

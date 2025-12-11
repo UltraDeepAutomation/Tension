@@ -1,12 +1,15 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import type { Node } from '@/entities/node/model/types';
 import type { CanvasState } from '@/entities/canvas/model/types';
-import { NODE_WIDTH, NODE_HEIGHT } from '@/shared/config/constants';
+import { NODE_WIDTH } from '@/shared/config/constants';
 
 interface MinimapProps {
   nodes: Node[];
   canvasState: CanvasState;
   onNavigate: (x: number, y: number) => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onResetZoom: () => void;
 }
 
 // Get CSS custom property value
@@ -15,21 +18,33 @@ const getCSSVar = (name: string, fallback: string): string => {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 };
 
-export const Minimap: React.FC<MinimapProps> = ({ nodes, canvasState, onNavigate }) => {
+// Estimated node height for minimap (collapsed state)
+const MINIMAP_NODE_HEIGHT = 120;
+
+/**
+ * Minimap — shows a scaled-down view of the entire canvas with viewport indicator
+ */
+export const Minimap: React.FC<MinimapProps> = ({ 
+  nodes, 
+  canvasState, 
+  onNavigate,
+  onZoomIn,
+  onZoomOut,
+  onResetZoom,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 180, height: 110 });
+  const [dimensions, setDimensions] = useState({ width: 180, height: 120 });
 
   // Update dimensions from CSS on mount and theme change
   useEffect(() => {
     const updateDimensions = () => {
       const width = parseInt(getCSSVar('--minimap-width', '180'), 10);
-      const height = parseInt(getCSSVar('--minimap-height', '110'), 10);
+      const height = parseInt(getCSSVar('--minimap-height', '120'), 10);
       setDimensions({ width, height });
     };
     updateDimensions();
     
-    // Listen for theme changes
     const observer = new MutationObserver(updateDimensions);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => observer.disconnect();
@@ -37,129 +52,153 @@ export const Minimap: React.FC<MinimapProps> = ({ nodes, canvasState, onNavigate
 
   const MINIMAP_WIDTH = dimensions.width;
   const MINIMAP_HEIGHT = dimensions.height;
-  const PADDING = 20;
 
+  // Calculate the minimap scale based on all nodes + viewport
+  const getMinimapTransform = useCallback(() => {
+    // Get viewport dimensions in world space
+    const viewportW = (window.innerWidth - 300) / canvasState.zoom;
+    const viewportH = (window.innerHeight - 100) / canvasState.zoom;
+    const viewportX = -canvasState.offsetX;
+    const viewportY = -canvasState.offsetY;
+
+    // Calculate bounding box including all nodes AND viewport
+    let minX = viewportX;
+    let maxX = viewportX + viewportW;
+    let minY = viewportY;
+    let maxY = viewportY + viewportH;
+
+    nodes.forEach((node) => {
+      minX = Math.min(minX, node.x);
+      maxX = Math.max(maxX, node.x + NODE_WIDTH);
+      minY = Math.min(minY, node.y);
+      maxY = Math.max(maxY, node.y + MINIMAP_NODE_HEIGHT);
+    });
+
+    // Add padding around content
+    const padding = 80;
+    const contentWidth = maxX - minX + padding * 2;
+    const contentHeight = maxY - minY + padding * 2;
+
+    // Calculate scale to fit all content in minimap
+    const scaleX = MINIMAP_WIDTH / contentWidth;
+    const scaleY = MINIMAP_HEIGHT / contentHeight;
+    const scale = Math.min(scaleX, scaleY, 0.15); // Max scale limit
+
+    // Center the content
+    const scaledWidth = contentWidth * scale;
+    const scaledHeight = contentHeight * scale;
+    const offsetX = (MINIMAP_WIDTH - scaledWidth) / 2 - (minX - padding) * scale;
+    const offsetY = (MINIMAP_HEIGHT - scaledHeight) / 2 - (minY - padding) * scale;
+
+    return { scale, offsetX, offsetY, viewportX, viewportY, viewportW, viewportH };
+  }, [nodes, canvasState, MINIMAP_WIDTH, MINIMAP_HEIGHT]);
+
+  // Draw minimap
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || nodes.length === 0) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Get theme colors from CSS
+    // Get theme colors
     const nodeColor = getCSSVar('--minimap-node', '#d1d5db');
     const rootColor = getCSSVar('--minimap-node-root', '#9ca3af');
-    const viewportStroke = getCSSVar('--minimap-viewport-stroke', '#6366f1');
-    const viewportFill = getCSSVar('--minimap-viewport', 'rgba(99, 102, 241, 0.2)');
+    const viewportColor = getCSSVar('--color-primary', '#6366f1');
 
-    // 1. Calculate bounding box of all nodes
-    const xs = nodes.map((n) => n.x);
-    const ys = nodes.map((n) => n.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs) + NODE_WIDTH;
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys) + NODE_HEIGHT;
-
-    const worldWidth = maxX - minX + PADDING * 2;
-    const worldHeight = maxY - minY + PADDING * 2;
-
-    // 2. Calculate scale to fit world into minimap
-    const scaleX = MINIMAP_WIDTH / worldWidth;
-    const scaleY = MINIMAP_HEIGHT / worldHeight;
-    const scale = Math.min(scaleX, scaleY, 0.15); // Cap scale to avoid too large nodes
-
-    // Center the content
-    const scaledWidth = worldWidth * scale;
-    const scaledHeight = worldHeight * scale;
-    const offsetX = (MINIMAP_WIDTH - scaledWidth) / 2;
-    const offsetY = (MINIMAP_HEIGHT - scaledHeight) / 2;
-
-    // 3. Clear canvas
+    // Clear canvas
     ctx.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
 
-    // 4. Draw nodes with proper proportions
+    const { scale, offsetX, offsetY, viewportX, viewportY, viewportW, viewportH } = getMinimapTransform();
+
+    // Draw each node
     nodes.forEach((node) => {
-      const mx = offsetX + (node.x - minX + PADDING) * scale;
-      const my = offsetY + (node.y - minY + PADDING) * scale;
-      const mw = NODE_WIDTH * scale;
-      const mh = NODE_HEIGHT * scale;
+      const x = node.x * scale + offsetX;
+      const y = node.y * scale + offsetY;
+      const w = NODE_WIDTH * scale;
+      const h = MINIMAP_NODE_HEIGHT * scale;
 
       ctx.fillStyle = node.isRoot ? rootColor : nodeColor;
       ctx.beginPath();
-      ctx.roundRect(mx, my, mw, mh, Math.max(1, 3 * scale));
+      ctx.roundRect(x, y, w, h, Math.max(1, 2 * scale));
       ctx.fill();
     });
 
-    // 5. Draw Viewport Rect
-    const viewportWidth = window.innerWidth - 300; // Approximate canvas width
-    const viewportHeight = window.innerHeight - 32;
+    // Draw viewport rectangle
+    const vx = viewportX * scale + offsetX;
+    const vy = viewportY * scale + offsetY;
+    const vw = viewportW * scale;
+    const vh = viewportH * scale;
 
-    const vx = (-canvasState.offsetX);
-    const vy = (-canvasState.offsetY);
-    const vw = viewportWidth / canvasState.zoom;
-    const vh = viewportHeight / canvasState.zoom;
+    ctx.strokeStyle = viewportColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 2]);
+    ctx.beginPath();
+    ctx.roundRect(vx, vy, vw, vh, 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-    const vmx = offsetX + (vx - minX + PADDING) * scale;
-    const vmy = offsetY + (vy - minY + PADDING) * scale;
-    const vmw = vw * scale;
-    const vmh = vh * scale;
+    // Fill viewport with semi-transparent color
+    ctx.fillStyle = `${viewportColor}15`;
+    ctx.beginPath();
+    ctx.roundRect(vx, vy, vw, vh, 2);
+    ctx.fill();
 
-    // Fill viewport area
-    ctx.fillStyle = viewportFill;
-    ctx.fillRect(vmx, vmy, vmw, vmh);
-    
-    // Stroke viewport border
-    ctx.strokeStyle = viewportStroke;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(vmx, vmy, vmw, vmh);
+  }, [nodes, canvasState, MINIMAP_WIDTH, MINIMAP_HEIGHT, getMinimapTransform]);
 
-  }, [nodes, canvasState, MINIMAP_WIDTH, MINIMAP_HEIGHT]);
-
-  const handleClick = (e: React.MouseEvent) => {
-    if (nodes.length === 0) return;
+  // Handle click to navigate
+  const handleClick = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
 
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    // Calculate same values as in render
-    const xs = nodes.map((n) => n.x);
-    const ys = nodes.map((n) => n.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs) + NODE_WIDTH;
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys) + NODE_HEIGHT;
-    const worldWidth = maxX - minX + PADDING * 2;
-    const worldHeight = maxY - minY + PADDING * 2;
-    const scaleX = MINIMAP_WIDTH / worldWidth;
-    const scaleY = MINIMAP_HEIGHT / worldHeight;
-    const scale = Math.min(scaleX, scaleY, 0.15);
+    const { scale, offsetX, offsetY, viewportW, viewportH } = getMinimapTransform();
 
-    // Center offset
-    const scaledWidth = worldWidth * scale;
-    const scaledHeight = worldHeight * scale;
-    const offsetXMinimap = (MINIMAP_WIDTH - scaledWidth) / 2;
-    const offsetYMinimap = (MINIMAP_HEIGHT - scaledHeight) / 2;
+    // Convert minimap coordinates to world coordinates
+    const worldX = (clickX - offsetX) / scale;
+    const worldY = (clickY - offsetY) / scale;
 
-    // Reverse: clickX = offsetXMinimap + (worldX - minX + PADDING) * scale
-    const worldX = (clickX - offsetXMinimap) / scale - PADDING + minX;
-    const worldY = (clickY - offsetYMinimap) / scale - PADDING + minY;
-
-    // Center viewport on clicked world position
-    const viewportW = window.innerWidth - 300;
-    const viewportH = window.innerHeight - 32;
-    
-    const newOffsetX = -worldX + (viewportW / 2) / canvasState.zoom;
-    const newOffsetY = -worldY + (viewportH / 2) / canvasState.zoom;
+    // Calculate new offset to center viewport on clicked point
+    const newOffsetX = -(worldX - viewportW / 2);
+    const newOffsetY = -(worldY - viewportH / 2);
 
     const dx = newOffsetX - canvasState.offsetX;
     const dy = newOffsetY - canvasState.offsetY;
     onNavigate(dx, dy);
-  };
+  }, [canvasState, onNavigate, getMinimapTransform]);
+
+  const zoomPercent = Math.round(canvasState.zoom * 100);
 
   return (
     <div className="minimap" ref={containerRef}>
+      {/* Zoom Controls */}
+      <div className="minimap-controls">
+        <button 
+          className="minimap-zoom-btn" 
+          onClick={onZoomOut}
+          title="Уменьшить"
+        >
+          −
+        </button>
+        <button 
+          className="minimap-zoom-label" 
+          onClick={onResetZoom}
+          title="Сбросить масштаб"
+        >
+          {zoomPercent}%
+        </button>
+        <button 
+          className="minimap-zoom-btn" 
+          onClick={onZoomIn}
+          title="Увеличить"
+        >
+          +
+        </button>
+      </div>
+      
+      {/* Canvas Preview */}
       <canvas
         ref={canvasRef}
         width={MINIMAP_WIDTH}

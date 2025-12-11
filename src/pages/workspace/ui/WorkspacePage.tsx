@@ -14,44 +14,113 @@ export const WorkspacePage: React.FC = () => {
   const [isCmdKOpen, setIsCmdKOpen] = React.useState(false);
   const { state, actions } = useWorkspaceModel();
   const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
-  const [isZoomModifierActive, setIsZoomModifierActive] = React.useState(false);
-  const baseToolRef = React.useRef(state.canvas.tool);
+  
+  // Tool state management
+  const [isSpacePressed, setIsSpacePressed] = React.useState(false);
+  const [isMetaPressed, setIsMetaPressed] = React.useState(false);
+  
+  // The "permanent" tool selected via toolbar (cursor or hand)
+  const permanentToolRef = React.useRef<'cursor' | 'hand'>('cursor');
+  
+  // Update permanent tool only when user clicks toolbar buttons
+  const handleToolChange = React.useCallback((tool: 'cursor' | 'hand') => {
+    permanentToolRef.current = tool;
+    actions.setTool(tool);
+  }, [actions]);
 
-  React.useEffect(() => {
-    baseToolRef.current = state.canvas.tool;
-  }, [state.canvas.tool]);
-
+  // Keyboard modifiers for temporary tool switching
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return;
 
+      // Cmd+K for command palette
       if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
         event.preventDefault();
         setIsCmdKOpen((prev) => !prev);
         return;
       }
 
-      if (event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar' || event.key === 'Meta') {
-        setIsZoomModifierActive(true);
+      // V for cursor tool
+      if (event.key === 'v' || event.key === 'V') {
+        if (!event.metaKey && !event.ctrlKey) {
+          permanentToolRef.current = 'cursor';
+          actions.setTool('cursor');
+        }
+        return;
+      }
+
+      // H for hand tool
+      if (event.key === 'h' || event.key === 'H') {
+        if (!event.metaKey && !event.ctrlKey) {
+          permanentToolRef.current = 'hand';
+          actions.setTool('hand');
+        }
+        return;
+      }
+
+      // Space — temporary hand mode
+      if (event.code === 'Space' && !event.metaKey && !event.ctrlKey) {
+        // Don't activate if typing in input
+        if ((event.target as HTMLElement).tagName === 'INPUT' || 
+            (event.target as HTMLElement).tagName === 'TEXTAREA') {
+          return;
+        }
+        event.preventDefault();
+        setIsSpacePressed(true);
         actions.setTool('hand');
+        return;
+      }
+
+      // Meta/Cmd — temporary hand mode
+      if (event.key === 'Meta') {
+        setIsMetaPressed(true);
+        actions.setTool('hand');
+        return;
       }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar' || event.key === 'Meta') {
-        setIsZoomModifierActive(false);
-        actions.setTool(baseToolRef.current === 'hand' ? 'cursor' : baseToolRef.current);
+      // Space released
+      if (event.code === 'Space') {
+        setIsSpacePressed(false);
+        // Only restore if Meta is not still pressed
+        if (!isMetaPressed) {
+          actions.setTool(permanentToolRef.current);
+        }
+        return;
       }
+
+      // Meta released
+      if (event.key === 'Meta') {
+        setIsMetaPressed(false);
+        // Only restore if Space is not still pressed
+        if (!isSpacePressed) {
+          actions.setTool(permanentToolRef.current);
+        }
+        return;
+      }
+    };
+
+    // Handle window blur (user switches apps while holding modifier)
+    const handleBlur = () => {
+      setIsSpacePressed(false);
+      setIsMetaPressed(false);
+      actions.setTool(permanentToolRef.current);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
-  }, [actions]);
+  }, [actions, isSpacePressed, isMetaPressed]);
+  
+  // Compute if zoom modifier is active (Cmd/Ctrl held for zoom)
+  const isZoomModifierActive = isMetaPressed;
 
   const commandActions: CommandAction[] = React.useMemo(() => [
     { id: 'new-chat', label: 'Create New Chat', perform: actions.createChat, icon: '➕' },
@@ -108,14 +177,12 @@ export const WorkspacePage: React.FC = () => {
         />
         <Toolbar
           tool={state.canvas.tool}
-          zoom={state.canvas.zoom}
-          onToolChange={actions.setTool}
-          onZoomIn={() => actions.changeZoom(+0.1)}
-          onZoomOut={() => actions.changeZoom(-0.1)}
-          onResetZoom={actions.resetZoom}
+          onToolChange={handleToolChange}
           onCenterCanvas={actions.centerCanvas}
           onUndo={actions.undo}
           onRedo={actions.redo}
+          onExport={actions.exportChat}
+          onImport={actions.importChat}
           canUndo={state.canUndo}
           canRedo={state.canRedo}
           saveStatus={state.isSaving ? 'saving' : 'saved'}
@@ -124,6 +191,9 @@ export const WorkspacePage: React.FC = () => {
           nodes={state.nodes}
           canvasState={state.canvas}
           onNavigate={actions.panCanvas}
+          onZoomIn={() => actions.changeZoom(0.1)}
+          onZoomOut={() => actions.changeZoom(-0.1)}
+          onResetZoom={actions.resetZoom}
         />
         <SettingsPanel
           isOpen={isSettingsOpen}

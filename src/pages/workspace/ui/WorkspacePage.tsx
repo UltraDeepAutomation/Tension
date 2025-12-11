@@ -5,9 +5,11 @@ import { Toolbar } from '@/widgets/toolbar/ui/Toolbar';
 import { SettingsPanel } from '@/widgets/settings-panel/ui/SettingsPanel';
 import { useWorkspaceModel } from '@/pages/workspace/model/useWorkspaceModel';
 import { useOpenAIKey } from '@/features/manage-openai-key/model/useOpenAIKey';
+import { CommandPalette, CommandAction } from '@/widgets/command-palette/ui/CommandPalette';
 
 export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+  const [isCmdKOpen, setIsCmdKOpen] = React.useState(false);
   const { state, actions } = useWorkspaceModel();
   const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
   const [isZoomModifierActive, setIsZoomModifierActive] = React.useState(false);
@@ -20,6 +22,12 @@ export const WorkspacePage: React.FC = () => {
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return;
+
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault();
+        setIsCmdKOpen((prev) => !prev);
+        return;
+      }
 
       if (event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar' || event.key === 'Meta') {
         setIsZoomModifierActive(true);
@@ -43,8 +51,23 @@ export const WorkspacePage: React.FC = () => {
     };
   }, [actions]);
 
+  const commandActions: CommandAction[] = React.useMemo(() => [
+    { id: 'new-chat', label: 'Create New Chat', perform: actions.createChat, icon: '➕' },
+    { id: 'export', label: 'Export Chat to JSON', perform: actions.exportChat, icon: '📤' },
+    { id: 'fit-view', label: 'Fit View', perform: actions.centerCanvas, icon: '⤢' },
+    { id: 'zoom-in', label: 'Zoom In', perform: () => actions.changeZoom(0.1), icon: '🔍' },
+    { id: 'zoom-out', label: 'Zoom Out', perform: () => actions.changeZoom(-0.1), icon: '🔍' },
+    { id: 'reset-zoom', label: 'Reset Zoom', perform: actions.resetZoom, icon: '0' },
+    { id: 'settings', label: 'Open Settings', perform: () => setIsSettingsOpen(true), icon: '⚙️' },
+  ], [actions]);
+
   return (
     <div className="workspace">
+      <CommandPalette
+        isOpen={isCmdKOpen}
+        onClose={() => setIsCmdKOpen(false)}
+        actions={commandActions}
+      />
       <Sidebar
         chats={state.chats}
         currentChatId={state.currentChatId}
@@ -52,6 +75,7 @@ export const WorkspacePage: React.FC = () => {
         onCreateChat={actions.createChat}
         onSelectChat={actions.selectChat}
         onDeleteChat={actions.deleteChat}
+        isSaving={state.isSaving}
       />
       <div className="workspace-main">
         <Canvas

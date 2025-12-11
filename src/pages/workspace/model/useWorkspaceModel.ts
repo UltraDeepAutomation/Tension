@@ -23,6 +23,7 @@ export interface WorkspaceState {
   connections: Connection[];
   chats: ChatRecord[];
   currentChatId: string | null;
+  isSaving: boolean;
 }
 
 export interface WorkspaceModel {
@@ -57,6 +58,7 @@ export function useWorkspaceModel(): WorkspaceModel {
   const [connections, setConnections] = React.useState<Connection[]>([]);
   const [chats, setChats] = React.useState<ChatRecord[]>([]);
   const [currentChatId, setCurrentChatId] = React.useState<string | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -135,16 +137,20 @@ export function useWorkspaceModel(): WorkspaceModel {
 
   React.useEffect(() => {
     if (!currentChatId) return;
-    const timeoutId = setTimeout(() => {
-      void saveNodesByChat(currentChatId, nodes);
+    setIsSaving(true);
+    const timeoutId = setTimeout(async () => {
+      await saveNodesByChat(currentChatId, nodes);
+      setIsSaving(false);
     }, 500);
     return () => clearTimeout(timeoutId);
   }, [nodes, currentChatId]);
 
   React.useEffect(() => {
     if (!currentChatId) return;
-    const timeoutId = setTimeout(() => {
-      void saveConnectionsByChat(currentChatId, connections);
+    setIsSaving(true);
+    const timeoutId = setTimeout(async () => {
+      await saveConnectionsByChat(currentChatId, connections);
+      setIsSaving(false);
     }, 500);
     return () => clearTimeout(timeoutId);
   }, [connections, currentChatId]);
@@ -538,6 +544,7 @@ export function useWorkspaceModel(): WorkspaceModel {
     connections,
     chats,
     currentChatId,
+    isSaving,
   };
 
   return {

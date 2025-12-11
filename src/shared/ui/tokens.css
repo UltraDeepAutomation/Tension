@@ -28,6 +28,8 @@
   --color-bg-elevated: #ffffff;
   --color-bg-muted: #f9fafb;
   --color-bg-canvas: #f8fafc;
+  --color-bg-overlay: rgba(15, 23, 42, 0.45);
+  --color-bg-overlay-blur: rgba(255, 255, 255, 0.7);
   
   /* Text */
   --color-text-primary: #111827;

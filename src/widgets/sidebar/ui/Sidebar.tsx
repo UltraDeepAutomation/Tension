@@ -8,6 +8,7 @@ interface SidebarProps {
   onCreateChat: () => void;
   onSelectChat: (chatId: string) => void;
   onDeleteChat: (chatId: string) => void;
+  isSaving?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -17,11 +18,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCreateChat,
   onSelectChat,
   onDeleteChat,
+  isSaving,
 }) => {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-title">Tension</div>
+        <div className="sidebar-title">
+          Tension
+          {isSaving && <span className="saving-badge">Saving...</span>}
+        </div>
         <button className="sidebar-new-thread" onClick={onCreateChat}>
           + Новый диалог
         </button>

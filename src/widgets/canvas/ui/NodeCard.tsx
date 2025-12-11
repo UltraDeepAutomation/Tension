@@ -17,7 +17,7 @@ const RESPONSE_LINES_COLLAPSED = 15;
 const PROMPT_MIN_ROWS = 2;
 const PROMPT_MAX_ROWS = 5;
 
-export const NodeCard: React.FC<NodeCardProps> = ({
+export const NodeCard: React.FC<NodeCardProps> = React.memo(({
   node,
   isDragging,
   onHeaderMouseDown,
@@ -188,4 +188,4 @@ export const NodeCard: React.FC<NodeCardProps> = ({
       </div>
     </div>
   );
-};
+});

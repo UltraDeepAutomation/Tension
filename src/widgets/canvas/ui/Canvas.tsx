@@ -39,11 +39,13 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   // Драг ноды
   const [draggingNodeId, setDraggingNodeId] = React.useState<string | null>(null);
-  const nodeDragStartRef = React.useRef<{ mouseX: number; mouseY: number; nodeX: number; nodeY: number } | null>(null);
+  const nodeDragLastPos = React.useRef<{ x: number; y: number } | null>(null);
 
   // Драг канваса (pan)
   const [isPanning, setIsPanning] = React.useState(false);
-  const panStartRef = React.useRef<{ mouseX: number; mouseY: number; offsetX: number; offsetY: number } | null>(null);
+  const panLastPos = React.useRef<{ x: number; y: number } | null>(null);
+
+  // --- Handlers ---
 
   const handleNodeHeaderMouseDown = (
     event: React.MouseEvent<HTMLDivElement>,
@@ -51,56 +53,77 @@ export const Canvas: React.FC<CanvasProps> = ({
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    nodeDragStartRef.current = {
-      mouseX: event.clientX,
-      mouseY: event.clientY,
-      nodeX: node.x,
-      nodeY: node.y,
-    };
+    nodeDragLastPos.current = { x: event.clientX, y: event.clientY };
     setDraggingNodeId(node.id);
   };
 
   const handleCanvasMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    // Начинаем pan только если клик не по ноде
-    if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains('canvas-inner')) {
+    // Начинаем pan только если клик не по ноде (target === currentTarget или .canvas-inner или .canvas-view)
+    const target = event.target as HTMLElement;
+    const isCanvas = target === event.currentTarget || 
+                     target.classList.contains('canvas-inner') ||
+                     target.classList.contains('canvas-view') ||
+                     target.tagName === 'svg';
+
+    if (isCanvas) {
       event.preventDefault();
-      panStartRef.current = {
-        mouseX: event.clientX,
-        mouseY: event.clientY,
-        offsetX: canvasState.offsetX,
-        offsetY: canvasState.offsetY,
-      };
+      panLastPos.current = { x: event.clientX, y: event.clientY };
       setIsPanning(true);
     }
   };
 
-  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    // Драг ноды
-    if (draggingNodeId && nodeDragStartRef.current) {
-      event.preventDefault();
-      const { mouseX, mouseY, nodeX, nodeY } = nodeDragStartRef.current;
-      const dx = (event.clientX - mouseX) / canvasState.zoom;
-      const dy = (event.clientY - mouseY) / canvasState.zoom;
-      onNodePositionChange(draggingNodeId, nodeX + dx, nodeY + dy);
-      return;
-    }
+  // Глобальные слушатели для перемещения и отпускания мыши
+  React.useEffect(() => {
+    if (!draggingNodeId && !isPanning) return;
 
-    // Pan канваса
-    if (isPanning && panStartRef.current) {
-      event.preventDefault();
-      const { mouseX, mouseY } = panStartRef.current;
-      const dx = (event.clientX - mouseX) / canvasState.zoom;
-      const dy = (event.clientY - mouseY) / canvasState.zoom;
-      onCanvasPan(dx, dy);
-    }
-  };
+    const handleWindowMouseMove = (event: MouseEvent) => {
+      // 1. Драг ноды
+      if (draggingNodeId && nodeDragLastPos.current) {
+        event.preventDefault();
+        const { x: lastX, y: lastY } = nodeDragLastPos.current;
+        const dx = (event.clientX - lastX) / canvasState.zoom;
+        const dy = (event.clientY - lastY) / canvasState.zoom;
 
-  const handleMouseUp = () => {
-    setDraggingNodeId(null);
-    nodeDragStartRef.current = null;
-    setIsPanning(false);
-    panStartRef.current = null;
-  };
+        // Обновляем последнюю позицию
+        nodeDragLastPos.current = { x: event.clientX, y: event.clientY };
+
+        // Ищем ноду и обновляем её позицию
+        const node = nodes.find((n) => n.id === draggingNodeId);
+        if (node) {
+          onNodePositionChange(draggingNodeId, node.x + dx, node.y + dy);
+        }
+      }
+
+      // 2. Pan канваса
+      if (isPanning && panLastPos.current) {
+        event.preventDefault();
+        const { x: lastX, y: lastY } = panLastPos.current;
+        const dx = (event.clientX - lastX) / canvasState.zoom;
+        const dy = (event.clientY - lastY) / canvasState.zoom;
+
+        // Обновляем последнюю позицию
+        panLastPos.current = { x: event.clientX, y: event.clientY };
+
+        onCanvasPan(dx, dy);
+      }
+    };
+
+    const handleWindowMouseUp = () => {
+      setDraggingNodeId(null);
+      nodeDragLastPos.current = null;
+      setIsPanning(false);
+      panLastPos.current = null;
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [draggingNodeId, isPanning, canvasState.zoom, nodes, onNodePositionChange, onCanvasPan]);
+
 
   // Блокируем скролл страницы внутри канваса
   React.useEffect(() => {
@@ -163,9 +186,6 @@ export const Canvas: React.FC<CanvasProps> = ({
         ref={canvasRef}
         className={`canvas-view ${isPanning ? 'canvas-view--panning' : ''}`}
         onMouseDown={handleCanvasMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
         style={{
           backgroundSize: `${24 * canvasState.zoom}px ${24 * canvasState.zoom}px`,
           backgroundPosition: `${canvasState.offsetX * canvasState.zoom}px ${canvasState.offsetY * canvasState.zoom}px`,

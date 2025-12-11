@@ -16,10 +16,13 @@ export interface WorkspaceModel {
   actions: {
     setTool: (tool: CanvasState['tool']) => void;
     changeZoom: (delta: number) => void;
+    zoomAtPoint: (delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => void;
     resetZoom: () => void;
+    panCanvas: (dx: number, dy: number) => void;
     setSettingsModel: (model: string) => void;
     updateNodePosition: (id: string, x: number, y: number) => void;
     playNode: (params: { nodeId: string; apiKey: string; model: string }) => Promise<void>;
+    clearData: () => void;
   };
 }
 
@@ -54,10 +57,11 @@ export function useWorkspaceModel(): WorkspaceModel {
         if (storedNodes && storedNodes.length > 0) {
           setNodes(storedNodes);
         } else {
+          // Root-нода в центре видимой области (offset = 0,0)
           const root: Node = {
             id: 'root',
-            x: 4000 - 160, // центр холста минус половина ширины ноды
-            y: 4000 - 110, // центр холста минус половина высоты ноды
+            x: 100,
+            y: 100,
             prompt: 'С чем сейчас поработаем?',
             modelResponse: null,
             branchCount: 4,
@@ -117,8 +121,63 @@ export function useWorkspaceModel(): WorkspaceModel {
     });
   };
 
+  // Zoom к позиции курсора
+  const zoomAtPoint = (delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => {
+    setCanvas((prev) => {
+      const oldZoom = prev.zoom;
+      const newZoom = Math.min(2, Math.max(0.25, oldZoom + delta));
+      
+      if (newZoom === oldZoom) return prev;
+
+      // Позиция курсора относительно канваса
+      const mouseX = clientX - canvasRect.left;
+      const mouseY = clientY - canvasRect.top;
+
+      // Позиция курсора в координатах контента (до zoom)
+      const contentX = mouseX / oldZoom - prev.offsetX;
+      const contentY = mouseY / oldZoom - prev.offsetY;
+
+      // Новый offset, чтобы точка под курсором осталась на месте
+      const newOffsetX = mouseX / newZoom - contentX;
+      const newOffsetY = mouseY / newZoom - contentY;
+
+      return {
+        ...prev,
+        zoom: newZoom,
+        offsetX: newOffsetX,
+        offsetY: newOffsetY,
+      };
+    });
+  };
+
   const resetZoom = () => {
     setCanvas((prev) => ({ ...prev, zoom: defaultCanvasState.zoom }));
+  };
+
+  const panCanvas = (dx: number, dy: number) => {
+    setCanvas((prev) => ({
+      ...prev,
+      offsetX: prev.offsetX + dx,
+      offsetY: prev.offsetY + dy,
+    }));
+  };
+
+  const clearData = () => {
+    const root: Node = {
+      id: 'root',
+      x: 0,
+      y: 0,
+      prompt: 'С чем сейчас поработаем?',
+      modelResponse: null,
+      branchCount: 4,
+      isRoot: true,
+      isPlaying: false,
+      inputs: [],
+      outputs: [],
+    };
+    setNodes([root]);
+    setConnections([]);
+    setCanvas(defaultCanvasState);
   };
 
   const setSettingsModel = (next: string) => {
@@ -181,24 +240,31 @@ export function useWorkspaceModel(): WorkspaceModel {
 
         const NODE_WIDTH = 320;
         const NODE_HEIGHT = 220;
-        const GAP_X = 80;
-        const GAP_Y = 40;
+        const GAP_X = 100; // Горизонтальный отступ между родителем и детьми
+        const GAP_Y = 60;  // Вертикальный отступ между детьми
 
-        const baseX = parent.x + NODE_WIDTH + GAP_X;
-        const totalHeight = branchCount * NODE_HEIGHT + (branchCount - 1) * GAP_Y;
-        const baseY = parent.y - totalHeight / 2 + NODE_HEIGHT / 2;
+        // Позиция X для всех дочерних нод (справа от родителя)
+        const childX = parent.x + NODE_WIDTH + GAP_X;
+
+        // Центрируем детей относительно центра родителя
+        const parentCenterY = parent.y + NODE_HEIGHT / 2;
+        const totalChildrenHeight = branchCount * NODE_HEIGHT + (branchCount - 1) * GAP_Y;
+        const firstChildY = parentCenterY - totalChildrenHeight / 2;
 
         const created: Node[] = choices.map((choice: any, index: number) => {
           const childId = `${nodeId}-child-${now}-${index}`;
           const content = choice.message?.content ?? '';
 
+          // Каждая нода смещается на (NODE_HEIGHT + GAP_Y) * index
+          const childY = firstChildY + index * (NODE_HEIGHT + GAP_Y);
+
           const child: Node = {
             id: childId,
-            x: baseX,
-            y: baseY + index * (NODE_HEIGHT + GAP_Y),
+            x: childX,
+            y: childY,
             prompt: source.prompt,
             modelResponse: typeof content === 'string' ? content : String(content),
-            branchCount: parent.branchCount,
+            branchCount: 2, // Дочерние ноды по умолчанию имеют 2 ветки
             isRoot: false,
             isPlaying: false,
             inputs: [],
@@ -262,10 +328,13 @@ export function useWorkspaceModel(): WorkspaceModel {
     actions: {
       setTool,
       changeZoom,
+      zoomAtPoint,
       resetZoom,
+      panCanvas,
       setSettingsModel,
       updateNodePosition,
       playNode,
+      clearData,
     },
   };
 }

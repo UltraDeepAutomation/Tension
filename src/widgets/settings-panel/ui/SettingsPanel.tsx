@@ -9,6 +9,7 @@ interface SettingsPanelProps {
   model: string;
   onChangeModel: (value: string) => void;
   onClose?: () => void;
+  onClearData?: () => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -20,6 +21,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   model,
   onChangeModel,
   onClose,
+  onClearData,
 }) => {
   if (!isOpen) return null;
 
@@ -66,6 +68,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           {!isLoaded && <p className="settings-hint">Загрузка настроек…</p>}
           {isLoaded && hasKey && (
             <p className="settings-hint">Ключ сохранён. Можно использовать Play в нодах.</p>
+          )}
+          {onClearData && (
+            <button
+              type="button"
+              className="settings-clear-button"
+              onClick={onClearData}
+            >
+              Сбросить все ноды
+            </button>
           )}
         </div>
       </div>

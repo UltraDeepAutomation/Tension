@@ -7,7 +7,7 @@ import { useWorkspaceModel } from '@/pages/workspace/model/useWorkspaceModel';
 import { useOpenAIKey } from '@/features/manage-openai-key/model/useOpenAIKey';
 
 export const WorkspacePage: React.FC = () => {
-  const [isSettingsOpen, setIsSettingsOpen] = React.useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
   const { state, actions } = useWorkspaceModel();
   const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
   const [isZoomModifierActive, setIsZoomModifierActive] = React.useState(false);
@@ -52,7 +52,8 @@ export const WorkspacePage: React.FC = () => {
           nodes={state.nodes}
           connections={state.connections}
           onNodePositionChange={actions.updateNodePosition}
-          onChangeZoom={actions.changeZoom}
+          onCanvasPan={actions.panCanvas}
+          onZoomAtPoint={actions.zoomAtPoint}
           isZoomModifierActive={isZoomModifierActive}
           onPlayNode={(nodeId: string) =>
             actions.playNode({ nodeId, apiKey, model: state.settings.model })
@@ -75,6 +76,10 @@ export const WorkspacePage: React.FC = () => {
           model={state.settings.model}
           onChangeModel={actions.setSettingsModel}
           onClose={() => setIsSettingsOpen(false)}
+          onClearData={() => {
+            actions.clearData();
+            setIsSettingsOpen(false);
+          }}
         />
       </div>
     </div>

@@ -21,6 +21,8 @@ export interface WorkspaceModel {
     panCanvas: (dx: number, dy: number) => void;
     setSettingsModel: (model: string) => void;
     updateNodePosition: (id: string, x: number, y: number) => void;
+    updateNodePrompt: (id: string, prompt: string) => void;
+    updateNodeBranchCount: (id: string, count: 1 | 2 | 3 | 4) => void;
     playNode: (params: { nodeId: string; apiKey: string; model: string }) => Promise<void>;
     clearData: () => void;
   };
@@ -190,6 +192,18 @@ export function useWorkspaceModel(): WorkspaceModel {
     );
   };
 
+  const updateNodePrompt = (id: string, prompt: string) => {
+    setNodes((prev) =>
+      prev.map((node) => (node.id === id ? { ...node, prompt } : node))
+    );
+  };
+
+  const updateNodeBranchCount = (id: string, count: 1 | 2 | 3 | 4) => {
+    setNodes((prev) =>
+      prev.map((node) => (node.id === id ? { ...node, branchCount: count } : node))
+    );
+  };
+
   const playNode = async ({ nodeId, apiKey, model: modelName }: { nodeId: string; apiKey: string; model: string }) => {
     const source = nodes.find((n) => n.id === nodeId);
     if (!source || !apiKey) return;
@@ -333,6 +347,8 @@ export function useWorkspaceModel(): WorkspaceModel {
       panCanvas,
       setSettingsModel,
       updateNodePosition,
+      updateNodePrompt,
+      updateNodeBranchCount,
       playNode,
       clearData,
     },

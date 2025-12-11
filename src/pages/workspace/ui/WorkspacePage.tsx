@@ -52,6 +52,8 @@ export const WorkspacePage: React.FC = () => {
           nodes={state.nodes}
           connections={state.connections}
           onNodePositionChange={actions.updateNodePosition}
+          onNodePromptChange={actions.updateNodePrompt}
+          onNodeBranchCountChange={actions.updateNodeBranchCount}
           onCanvasPan={actions.panCanvas}
           onZoomAtPoint={actions.zoomAtPoint}
           isZoomModifierActive={isZoomModifierActive}

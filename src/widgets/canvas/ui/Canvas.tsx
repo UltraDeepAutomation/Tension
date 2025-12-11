@@ -7,6 +7,8 @@ interface CanvasProps {
   nodes: Node[];
   connections: Connection[];
   onNodePositionChange: (id: string, x: number, y: number) => void;
+  onNodePromptChange: (id: string, prompt: string) => void;
+  onNodeBranchCountChange: (id: string, count: 1 | 2 | 3 | 4) => void;
   onCanvasPan: (dx: number, dy: number) => void;
   onZoomAtPoint: (delta: number, clientX: number, clientY: number, canvasRect: DOMRect) => void;
   isZoomModifierActive: boolean;
@@ -22,6 +24,8 @@ export const Canvas: React.FC<CanvasProps> = ({
   nodes,
   connections,
   onNodePositionChange,
+  onNodePromptChange,
+  onNodeBranchCountChange,
   onCanvasPan,
   onZoomAtPoint,
   isZoomModifierActive,
@@ -223,12 +227,16 @@ export const Canvas: React.FC<CanvasProps> = ({
                 <textarea
                   className="node-prompt"
                   placeholder="Вопрос / контекст..."
-                  defaultValue={node.prompt}
+                  value={node.prompt}
+                  onChange={(e) => onNodePromptChange(node.id, e.target.value)}
                   onClick={(e) => e.stopPropagation()}
                 />
                 <div className="node-response">
                   {node.isPlaying ? (
-                    <span className="node-response-loading">Модель думает...</span>
+                    <div className="node-response-loading">
+                      <span className="spinner" />
+                      <span>Модель думает...</span>
+                    </div>
                   ) : (
                     <span className="node-response-placeholder">
                       {node.modelResponse ?? 'Ответ модели появится здесь'}
@@ -239,7 +247,11 @@ export const Canvas: React.FC<CanvasProps> = ({
               <div className="node-footer">
                 <label className="node-branch-label">
                   Ветки:
-                  <select defaultValue={node.branchCount} onClick={(e) => e.stopPropagation()}>
+                  <select
+                    value={node.branchCount}
+                    onChange={(e) => onNodeBranchCountChange(node.id, Number(e.target.value) as 1 | 2 | 3 | 4)}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <option value={1}>1</option>
                     <option value={2}>2</option>
                     <option value={3}>3</option>

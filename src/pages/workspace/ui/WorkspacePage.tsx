@@ -14,8 +14,10 @@ import { getCouncilById, PRESET_COUNCILS } from '@/shared/lib/council';
 import { Loader2, Users, MessageSquare } from 'lucide-react';
 import type { ProviderId } from '@/entities/node/model/types';
 import type { AutonomousCouncilLogEvent } from '@/pages/workspace/model/useAutonomousCouncil';
+import { useToast } from '@/shared/lib/contexts/ToastContext';
 
 export const WorkspacePage: React.FC = () => {
+  const { showToast } = useToast();
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
   const [isCmdKOpen, setIsCmdKOpen] = React.useState(false);
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
@@ -169,6 +171,49 @@ export const WorkspacePage: React.FC = () => {
     a.remove();
     URL.revokeObjectURL(url);
   }, [state.allowedProviders, state.councilMode, state.currentChatId]);
+
+  const copyCouncilLogs = React.useCallback(async () => {
+    const chatId = state.currentChatId;
+    if (!chatId) return;
+    const logs = councilLogsByChatIdRef.current.get(chatId) ?? [];
+    const meta = councilRunMetaByChatIdRef.current.get(chatId);
+
+    const payload = {
+      schema: 'tension.council.logs.v1',
+      exportedAt: Date.now(),
+      chatId,
+      run: meta ?? null,
+      councilMode: state.councilMode,
+      allowedProviders: state.allowedProviders,
+      logs,
+    };
+
+    const text = JSON.stringify(payload, null, 2);
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        textarea.remove();
+        if (!ok) {
+          throw new Error('Copy command failed');
+        }
+      }
+      showToast('Logs copied', 'success');
+    } catch (error) {
+      console.error('Failed to copy logs', error);
+      showToast('Failed to copy logs', 'error');
+    }
+  }, [showToast, state.allowedProviders, state.councilMode, state.currentChatId]);
 
   React.useEffect(() => {
     const chatId = state.currentChatId;
@@ -641,6 +686,7 @@ export const WorkspacePage: React.FC = () => {
           onChangeVerboseLogs={setVerboseLogs}
           hasCouncilLogs={getHasCouncilLogs()}
           onDownloadCouncilLogs={downloadCouncilLogs}
+          onCopyCouncilLogs={copyCouncilLogs}
           councils={PRESET_COUNCILS}
           selectedCouncilId={state.selectedCouncilId}
           onSelectCouncil={actions.selectCouncil}

@@ -55,6 +55,7 @@ interface ChatPanelProps {
   onResetCouncil?: () => void;
   hasCouncilLogs?: boolean;
   onDownloadCouncilLogs?: () => void;
+  onCopyCouncilLogs?: () => void;
   maxDepth: number;
   onChangeMaxDepth: (value: number) => void;
   onStartPlan?: (rootNodeId: string, maxDepth: number) => void;
@@ -92,6 +93,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onResetCouncil,
   hasCouncilLogs = false,
   onDownloadCouncilLogs,
+  onCopyCouncilLogs,
   maxDepth,
   onChangeMaxDepth,
   onStartPlan,
@@ -299,6 +301,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   type="button"
                 >
                   Download logs
+                </button>
+              )}
+
+              {onCopyCouncilLogs && (
+                <button
+                  className="chat-panel-button chat-panel-button--secondary"
+                  onClick={onCopyCouncilLogs}
+                  disabled={!hasCouncilLogs}
+                  title={!hasCouncilLogs ? 'Нет логов для копирования' : 'Скопировать полные логи Council (JSON)'}
+                  type="button"
+                >
+                  Copy logs
                 </button>
               )}
 

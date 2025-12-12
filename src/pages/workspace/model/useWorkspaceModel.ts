@@ -974,6 +974,14 @@ export function useWorkspaceModel(): WorkspaceModel {
 
   const setCouncilModeAction = React.useCallback((mode: 'autonomous' | 'chatgpt_only') => {
     setCouncilMode(mode);
+    if (mode === 'chatgpt_only') {
+      const normalized: ProviderId[] = ['openai'];
+      setAllowedProviders(normalized);
+      if (currentChatId) {
+        allowedProvidersByChatIdRef.current.set(currentChatId, normalized);
+        void saveSetting('allowed_providers_by_chat', Object.fromEntries(allowedProvidersByChatIdRef.current.entries()));
+      }
+    }
   }, []);
 
   const setAllowedProvidersAction = React.useCallback((nextAllowed: ProviderId[]) => {

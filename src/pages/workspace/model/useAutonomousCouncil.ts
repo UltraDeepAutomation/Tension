@@ -204,7 +204,7 @@ export function useAutonomousCouncil({
   setGraph,
   showToast,
   mode = 'autonomous',
-  allowedProviders,
+  allowedProviders = [],
 }: UseAutonomousCouncilParams): UseAutonomousCouncilResult {
   const [councilPlan, setCouncilPlan] = React.useState<CouncilPlan | null>(null);
   const planByChatRef = React.useRef<Map<string, CouncilPlan | null>>(new Map());
@@ -335,7 +335,7 @@ export function useAutonomousCouncil({
   );
 
   const planWave = React.useCallback(
-    async (params: { question: string; depth: number }): Promise<PlannerResult> => {
+    async (params: { question: string; depth: number; onLog?: (event: AutonomousCouncilLogEvent) => void }): Promise<PlannerResult> => {
       const availableModels = gateway.getAvailableModels();
 
       const plannerModels = mode === 'chatgpt_only'
@@ -353,17 +353,41 @@ export function useAutonomousCouncil({
         'gpt-4o';
       const sampleModels = availableModels.slice(0, 24).map((m) => `${m.provider}:${m.id}`).join(', ');
 
+      const providerRule = mode === 'chatgpt_only'
+        ? 'You MUST only use providerId="openai" for ALL branches and mergeModel.'
+        : `You MUST ONLY use providerId from this set: ${allowedProviders.join(', ') || '(empty)'}.`;
+
       const system = `You are an autonomous LLM Council planner.
+
+IMPORTANT: The user is asking about AI models / LLMs. Do NOT interpret the question as "computers", "laptops" or hardware unless explicitly asked.
+
 Return STRICT JSON ONLY with shape:
 {"branches":[{"providerId":"openai|anthropic|google|openrouter|xai|ollama","modelId":"...","prompt":"..."}],"mergeModel":{"providerId":"...","modelId":"..."},"continue":true|false}
+
 Rules:
-- branches: 3..5 items
-- prefer diverse providers
-- prompts must be short and targeted; each branch explores different angle
+- branches: 3..5 items (in chatgpt_only you may output 1..3 items if only one provider is available)
+- prompts must be short and targeted; each branch explores a different angle
+- Use REAL model IDs that exist in the available models list (do not invent model IDs like "claude" if it's not available)
+- ${providerRule}
+
 Available models sample: ${sampleModels}`;
 
       const user = `Question: ${params.question}
 Depth: ${params.depth}`;
+
+      emitLog({
+        onLog: params.onLog,
+        level: 'debug',
+        summary: `Planner request (depth=${params.depth})`,
+        data: {
+          model: plannerModelId,
+          system,
+          user,
+          mode,
+          allowedProviders,
+          configuredProviders: providers.filter((p) => p.isEnabled && p.apiKey).map((p) => p.id),
+        },
+      });
 
       const response = await gateway.query({
         model: plannerModelId,
@@ -372,9 +396,34 @@ Depth: ${params.depth}`;
           { role: 'user', content: user },
         ],
       });
+
+      emitLog({
+        onLog: params.onLog,
+        level: response.error ? 'warn' : 'debug',
+        summary: `Planner response (depth=${params.depth})`,
+        data: {
+          provider: response.provider,
+          model: response.model,
+          latencyMs: response.latencyMs,
+          usage: response.usage,
+          error: response.error,
+          raw: response.content,
+        },
+      });
+
       const raw = response.error ? '' : response.content;
       const json = extractJsonObject(raw);
       const parsed = json ? safeJsonParse<PlannerResult>(json) : null;
+
+      emitLog({
+        onLog: params.onLog,
+        level: parsed ? 'debug' : 'warn',
+        summary: `Planner parse (depth=${params.depth})`,
+        data: {
+          extractedJson: json,
+          parsed,
+        },
+      });
 
       if (parsed?.branches?.length) {
         return parsed;
@@ -473,7 +522,7 @@ Depth: ${params.depth}`;
           details: `entryNodeId=${entry.id}`,
         });
 
-        const planned = await planWave({ question: resolvedQuestion, depth });
+        const planned = await planWave({ question: resolvedQuestion, depth, onLog });
 
         emitLog({
           onLog,
@@ -481,6 +530,24 @@ Depth: ${params.depth}`;
           summary: `Wave ${depth + 1}: planner output`,
           details: safePrettyJson(planned),
         });
+
+        const filteredOut = planned.branches
+          .map((b) => {
+            const reasons: string[] = [];
+            if (!isProviderAllowed(allowedProviders, b.providerId)) reasons.push('provider_not_allowed');
+            if (!hasProviderApiKey(providers, b.providerId)) reasons.push('missing_api_key_or_disabled');
+            return { branch: b, reasons };
+          })
+          .filter((x) => x.reasons.length > 0);
+
+        if (filteredOut.length > 0) {
+          emitLog({
+            onLog,
+            level: 'info',
+            summary: `Wave ${depth + 1}: branches filtered out (${filteredOut.length})`,
+            data: filteredOut,
+          });
+        }
 
         const branches = planned.branches
           .filter((b) => isProviderAllowed(allowedProviders, b.providerId))
@@ -553,6 +620,19 @@ Depth: ${params.depth}`;
                 model: node.modelId ?? 'gpt-4o',
                 messages: [{ role: 'user', content: node.prompt || resolvedQuestion }],
               };
+
+              emitLog({
+                onLog,
+                level: 'debug',
+                summary: `Wave ${depth + 1}: branch ${idx + 1} request`,
+                data: {
+                  nodeId: node.id,
+                  providerId: node.providerId,
+                  modelId: node.modelId,
+                  request,
+                },
+              });
+
               const result: LLMResponse = await gateway.query(request);
 
               const output = result.error ? `⚠️ ${result.error}` : result.content;
@@ -592,6 +672,15 @@ Depth: ${params.depth}`;
                 level: result.error ? 'warn' : 'info',
                 summary: `Wave ${depth + 1}: branch ${idx + 1} done`,
                 details: `${node.providerId}/${node.modelId}\nlatencyMs=${result.latencyMs}\n${result.error ? `error=${result.error}` : 'ok'}`,
+                data: {
+                  nodeId: node.id,
+                  providerId: node.providerId,
+                  modelId: node.modelId,
+                  latencyMs: result.latencyMs,
+                  usage: result.usage,
+                  error: result.error,
+                  output,
+                },
               });
 
               return { providerId: (node.providerId ?? 'openai') as ProviderId, modelId: node.modelId ?? 'unknown', content: output };
@@ -676,6 +765,12 @@ Depth: ${params.depth}`;
           level: 'info',
           summary: `Wave ${depth + 1}: merge query`,
           details: `nodeId=${mergeNode.id}\n${mergeNode.providerId}/${mergeNode.modelId}`,
+          data: {
+            nodeId: mergeNode.id,
+            providerId: mergeNode.providerId,
+            modelId: mergeNode.modelId,
+            prompt: mergePrompt,
+          },
         });
 
         const mergeRequest: LLMRequest = {
@@ -691,6 +786,15 @@ Depth: ${params.depth}`;
           level: mergeResult.error ? 'warn' : 'info',
           summary: `Wave ${depth + 1}: merge done`,
           details: `latencyMs=${mergeResult.latencyMs}\n${mergeResult.error ? `error=${mergeResult.error}` : 'ok'}`,
+          data: {
+            nodeId: mergeNode.id,
+            providerId: mergeNode.providerId,
+            modelId: mergeNode.modelId,
+            latencyMs: mergeResult.latencyMs,
+            usage: mergeResult.usage,
+            error: mergeResult.error,
+            output: mergeOutput,
+          },
         });
 
         setGraphSafe((prev) => ({
@@ -701,24 +805,35 @@ Depth: ${params.depth}`;
         updateMergeStatus(mergePlanItem.id, mergeResult.error ? 'error' : 'done', mergeResult.error);
 
         onThinkingStep?.({
-          id: crypto.randomUUID(),
           stage: 'synthesis',
-          agentId: mergeNode.modelId ?? 'merge',
           agentName: 'Chairman',
-          providerId: resolvedMergeModel.providerId,
-          modelId: mergeNode.modelId ?? 'merge',
-          input: 'Синтез ответов',
+          providerId: (mergeNode.providerId ?? 'openai') as ProviderId,
+          modelId: mergeNode.modelId ?? 'gpt-4o',
+          input: mergePrompt,
           output: mergeOutput,
           timestamp: Date.now(),
           duration: mergeResult.latencyMs,
           nodeId: mergeNode.id,
         });
 
-        entryNodeId = mergeNode.id;
+        emitLog({
+          onLog,
+          level: 'debug',
+          summary: `Thinking step: synthesis`,
+          data: {
+            stage: 'synthesis',
+            agentName: 'Chairman',
+            providerId: mergeNode.providerId,
+            modelId: mergeNode.modelId,
+            nodeId: mergeNode.id,
+            timestamp: Date.now(),
+            duration: mergeResult.latencyMs,
+            input: mergePrompt,
+            output: mergeOutput,
+          },
+        });
 
-        if (planned.continue === false) {
-          break;
-        }
+        entryNodeId = mergeNode.id;
       }
 
       showToast('Autonomous Council: готово', 'success');

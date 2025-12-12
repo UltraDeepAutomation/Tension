@@ -280,49 +280,52 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             />
           </div>
           <div className="chat-panel-council-actions">
-            <button
-              className="chat-panel-button"
-              disabled={isStartDisabled}
-              onClick={() => rootNodeId && onStartPlan?.(rootNodeId, maxDepth)}
-              title={startDisabledReason || undefined}
-            >
-              Запустить план
-            </button>
+            <div className="chat-panel-council-actions__grid">
+              <button
+                className="chat-panel-button"
+                disabled={isStartDisabled}
+                onClick={() => rootNodeId && onStartPlan?.(rootNodeId, maxDepth)}
+                title={startDisabledReason || undefined}
+              >
+                Запустить план
+              </button>
 
-            {onDownloadCouncilLogs && (
-              <button
-                className="chat-panel-button chat-panel-button--secondary"
-                onClick={onDownloadCouncilLogs}
-                disabled={!hasCouncilLogs}
-                title={!hasCouncilLogs ? 'Нет логов для скачивания' : 'Скачать полные логи Council (JSON)'}
-                type="button"
-              >
-                Download logs
-              </button>
-            )}
-            {onStopCouncil && (
-              <button
-                className="chat-panel-button chat-panel-button--danger"
-                onClick={onStopCouncil}
-                disabled={!isThinking}
-                title={!isThinking ? 'Нет активного исполнения' : undefined}
-              >
-                Stop
-              </button>
-            )}
-            {onResetCouncil && (
-              <button
-                className="chat-panel-button chat-panel-button--secondary"
-                onClick={onResetCouncil}
-                disabled={isThinking}
-                title={isThinking ? 'Сначала остановите исполнение' : undefined}
-              >
-                Reset
-              </button>
-            )}
-            {isStartDisabled && (
-              <span className="chat-panel-hint">{startDisabledReason}</span>
-            )}
+              {onDownloadCouncilLogs && (
+                <button
+                  className="chat-panel-button chat-panel-button--secondary"
+                  onClick={onDownloadCouncilLogs}
+                  disabled={!hasCouncilLogs}
+                  title={!hasCouncilLogs ? 'Нет логов для скачивания' : 'Скачать полные логи Council (JSON)'}
+                  type="button"
+                >
+                  Download logs
+                </button>
+              )}
+
+              {onStopCouncil && (
+                <button
+                  className="chat-panel-button chat-panel-button--danger"
+                  onClick={onStopCouncil}
+                  disabled={!isThinking}
+                  title={!isThinking ? 'Нет активного исполнения' : undefined}
+                >
+                  Stop
+                </button>
+              )}
+
+              {onResetCouncil && (
+                <button
+                  className="chat-panel-button chat-panel-button--secondary"
+                  onClick={onResetCouncil}
+                  disabled={isThinking}
+                  title={isThinking ? 'Сначала остановите исполнение' : undefined}
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {isStartDisabled && <span className="chat-panel-hint">{startDisabledReason}</span>}
           </div>
         </div>
 

@@ -36,6 +36,13 @@
   /* Response section (green background) */
   --color-response-bg: rgba(34, 197, 94, 0.12);
   --color-response-border: rgba(34, 197, 94, 0.25);
+
+  --provider-openai: #10a37f;
+  --provider-anthropic: #d97706;
+  --provider-google: #4285f4;
+  --provider-openrouter: #8b5cf6;
+  --provider-xai: #111827;
+  --provider-ollama: #0ea5e9;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -185,6 +192,13 @@
   
   /* Canvas grid */
   --canvas-grid-dot: rgba(255, 255, 255, 0.08);
+
+  --provider-openai: #34d399;
+  --provider-anthropic: #f59e0b;
+  --provider-google: #60a5fa;
+  --provider-openrouter: #a78bfa;
+  --provider-xai: #e5e7eb;
+  --provider-ollama: #38bdf8;
 }
 
 :root {

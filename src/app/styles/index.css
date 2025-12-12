@@ -377,27 +377,27 @@ body {
 
 /* Provider-specific node styles */
 .node--provider-openai {
-  border-left: 3px solid #10a37f;
+  border-left: 3px solid var(--provider-openai);
 }
 
 .node--provider-anthropic {
-  border-left: 3px solid #d97706;
+  border-left: 3px solid var(--provider-anthropic);
 }
 
 .node--provider-google {
-  border-left: 3px solid #4285f4;
+  border-left: 3px solid var(--provider-google);
 }
 
 .node--provider-openrouter {
-  border-left: 3px solid #8b5cf6;
+  border-left: 3px solid var(--provider-openrouter);
 }
 
 .node--provider-xai {
-  border-left: 3px solid #1a1a1a;
+  border-left: 3px solid var(--provider-xai);
 }
 
 .node--provider-ollama {
-  border-left: 3px solid #0ea5e9;
+  border-left: 3px solid var(--provider-ollama);
 }
 
 /* High confidence node glow */

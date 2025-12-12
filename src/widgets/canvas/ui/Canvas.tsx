@@ -473,27 +473,6 @@ export const Canvas: React.FC<CanvasProps> = ({
             {connectionPaths}
           </svg>
 
-          <div className={`canvas-legend ${isLegendOpen ? 'canvas-legend--open' : 'canvas-legend--closed'}`}>
-            <button
-              type="button"
-              className="canvas-legend__toggle"
-              onClick={() => setIsLegendOpen((v) => !v)}
-              aria-label={isLegendOpen ? 'Hide providers legend' : 'Show providers legend'}
-            >
-              Providers
-            </button>
-            {isLegendOpen && (
-              <div className="canvas-legend__list">
-                {Object.entries(PROVIDER_COLORS).map(([providerId, color]) => (
-                  <div className="canvas-legend__item" key={providerId}>
-                    <span className="canvas-legend__dot" style={{ backgroundColor: color }} />
-                    <span className="canvas-legend__label">{providerId}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
           {nodes.map((node) => (
             <NodeCard
               key={node.id}

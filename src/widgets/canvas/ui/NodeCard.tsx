@@ -5,13 +5,22 @@ import { MarkdownRenderer } from '@/shared/ui/MarkdownRenderer';
 import { AVAILABLE_MODELS } from '@/shared/config/models';
 
 /** Иконки и цвета для провайдеров */
-const PROVIDER_STYLES: Record<ProviderId, { icon: string; color: string; name: string }> = {
-  openai: { icon: '🟢', color: '#10a37f', name: 'OpenAI' },
-  anthropic: { icon: '🟠', color: '#d97706', name: 'Anthropic' },
-  google: { icon: '🔵', color: '#4285f4', name: 'Google' },
-  openrouter: { icon: '🟣', color: '#8b5cf6', name: 'OpenRouter' },
-  xai: { icon: '⚫', color: '#1a1a1a', name: 'xAI' },
-  ollama: { icon: '🦙', color: '#0ea5e9', name: 'Ollama' },
+const PROVIDER_STYLES: Record<ProviderId, { icon: string; name: string }> = {
+  openai: { icon: '🟢', name: 'OpenAI' },
+  anthropic: { icon: '🟠', name: 'Anthropic' },
+  google: { icon: '🔵', name: 'Google' },
+  openrouter: { icon: '🟣', name: 'OpenRouter' },
+  xai: { icon: '⚫', name: 'xAI' },
+  ollama: { icon: '🦙', name: 'Ollama' },
+};
+
+const PROVIDER_COLOR_VARS: Record<ProviderId, string> = {
+  openai: 'var(--provider-openai)',
+  anthropic: 'var(--provider-anthropic)',
+  google: 'var(--provider-google)',
+  openrouter: 'var(--provider-openrouter)',
+  xai: 'var(--provider-xai)',
+  ollama: 'var(--provider-ollama)',
 };
 
 interface NodeCardProps {
@@ -70,6 +79,7 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
 
   const hasError = Boolean(node.error);
   const providerStyle = node.providerId ? PROVIDER_STYLES[node.providerId] : null;
+  const providerColor = node.providerId ? PROVIDER_COLOR_VARS[node.providerId] : null;
 
   // Build class names
   const nodeClasses = [
@@ -91,7 +101,7 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
       style={{ 
         left: node.x, 
         top: node.y,
-        ...(providerStyle && node.modelResponse ? { '--provider-color': providerStyle.color } as React.CSSProperties : {}),
+        ...(providerColor && node.modelResponse ? { '--provider-color': providerColor } as React.CSSProperties : {}),
       }}
       onClick={onClick}
     >
@@ -104,7 +114,7 @@ const NodeCardComponent: React.FC<NodeCardProps> = ({
             <span 
               className="node-provider-badge" 
               title={`${providerStyle.name}${node.modelId ? ` • ${node.modelId}` : ''}`}
-              style={{ '--badge-color': providerStyle.color } as React.CSSProperties}
+              style={{ '--badge-color': providerColor ?? undefined } as React.CSSProperties}
             >
               {providerStyle.icon}
             </span>

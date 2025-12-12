@@ -144,13 +144,14 @@ export const WorkspacePage: React.FC = () => {
     return Boolean(logs && logs.length > 0);
   }, [state.currentChatId]);
 
-  const downloadCouncilLogs = React.useCallback(() => {
+  const buildCouncilLogsPayload = React.useCallback(() => {
     const chatId = state.currentChatId;
-    if (!chatId) return;
+    if (!chatId) return null;
     const logs = councilLogsByChatIdRef.current.get(chatId) ?? [];
     const meta = councilRunMetaByChatIdRef.current.get(chatId);
+    const exportedThinkingSteps = thinkingStepsByChatIdRef.current.get(chatId) ?? [];
 
-    const payload = {
+    return {
       schema: 'tension.council.logs.v1',
       exportedAt: Date.now(),
       chatId,
@@ -158,35 +159,29 @@ export const WorkspacePage: React.FC = () => {
       councilMode: state.councilMode,
       allowedProviders: state.allowedProviders,
       logs,
+      thinkingSteps: exportedThinkingSteps,
     };
+  }, [state.allowedProviders, state.councilMode, state.currentChatId]);
+
+  const downloadCouncilLogs = React.useCallback(() => {
+    const payload = buildCouncilLogsPayload();
+    if (!payload) return;
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const safeTs = new Date().toISOString().replace(/[:.]/g, '-');
     a.href = url;
-    a.download = `council-logs-${chatId}-${safeTs}.json`;
+    a.download = `council-logs-${payload.chatId}-${safeTs}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-  }, [state.allowedProviders, state.councilMode, state.currentChatId]);
+  }, [buildCouncilLogsPayload]);
 
   const copyCouncilLogs = React.useCallback(async () => {
-    const chatId = state.currentChatId;
-    if (!chatId) return;
-    const logs = councilLogsByChatIdRef.current.get(chatId) ?? [];
-    const meta = councilRunMetaByChatIdRef.current.get(chatId);
-
-    const payload = {
-      schema: 'tension.council.logs.v1',
-      exportedAt: Date.now(),
-      chatId,
-      run: meta ?? null,
-      councilMode: state.councilMode,
-      allowedProviders: state.allowedProviders,
-      logs,
-    };
+    const payload = buildCouncilLogsPayload();
+    if (!payload) return;
 
     const text = JSON.stringify(payload, null, 2);
 
@@ -213,7 +208,7 @@ export const WorkspacePage: React.FC = () => {
       console.error('Failed to copy logs', error);
       showToast('Failed to copy logs', 'error');
     }
-  }, [showToast, state.allowedProviders, state.councilMode, state.currentChatId]);
+  }, [buildCouncilLogsPayload, showToast]);
 
   React.useEffect(() => {
     const chatId = state.currentChatId;

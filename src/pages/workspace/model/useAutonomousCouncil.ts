@@ -3,7 +3,7 @@ import type { Node, Connection } from '@/entities/node/model/types';
 import type { LLMGateway, LLMRequest, LLMResponse, ProviderConfig, ProviderId } from '@/shared/lib/llm';
 import type { ToastType } from '@/shared/lib/contexts/ToastContext';
 import type { CouncilPlan, CouncilBranch, CouncilMerge, BranchStatus } from './councilPlanTypes';
-import { PROVIDER_COLORS, NODE_HEIGHT } from '@/shared/config/constants';
+import { NODE_GAP_X, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, PROVIDER_COLORS } from '@/shared/config/constants';
 import type { CouncilThinkingStep } from './useWorkspaceModel';
 
 interface UseAutonomousCouncilParams {
@@ -109,12 +109,13 @@ function createBranchNodes(params: {
   branches: PlannerBranchSpec[];
 }): { childNodes: Node[]; connections: Connection[] } {
   const { parent, branches } = params;
-  const radius = 420;
+  const stepX = NODE_WIDTH + NODE_GAP_X;
+  const stepY = NODE_GAP_Y * 4;
 
   const childNodes: Node[] = branches.map((branch, index) => {
-    const angle = (index / Math.max(1, branches.length)) * Math.PI - Math.PI / 2;
-    const x = parent.x + Math.cos(angle) * radius;
-    const y = parent.y + NODE_HEIGHT + 120 + Math.sin(angle) * radius * 0.5;
+    const mid = (branches.length - 1) / 2;
+    const x = parent.x + stepX;
+    const y = parent.y + (index - mid) * stepY;
 
     const id = crypto.randomUUID();
     return {
@@ -159,7 +160,8 @@ function createMergeNode(params: {
 }): { mergeNode: Node; connections: Connection[] } {
   const { wave, parent, branchNodes, mergeModel, mergePrompt } = params;
 
-  const x = parent.x + 760;
+  const stepX = NODE_WIDTH + NODE_GAP_X;
+  const x = parent.x + stepX * 2;
   const avgY = branchNodes.length
     ? branchNodes.reduce((sum, n) => sum + n.y, 0) / branchNodes.length
     : parent.y + NODE_HEIGHT + 200;
@@ -805,7 +807,9 @@ Depth: ${params.depth}`;
         updateMergeStatus(mergePlanItem.id, mergeResult.error ? 'error' : 'done', mergeResult.error);
 
         onThinkingStep?.({
+          id: crypto.randomUUID(),
           stage: 'synthesis',
+          agentId: 'chairman',
           agentName: 'Chairman',
           providerId: (mergeNode.providerId ?? 'openai') as ProviderId,
           modelId: mergeNode.modelId ?? 'gpt-4o',

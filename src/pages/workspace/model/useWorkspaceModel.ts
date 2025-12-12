@@ -23,6 +23,7 @@ import {
   SIDEBAR_PADDING,
   CANVAS_OFFSET_LIMIT,
   DEBOUNCE_SAVE_MS,
+  PROVIDER_COLORS,
 } from '@/shared/config/constants';
 import { useHistory } from '@/shared/lib/hooks/useHistory';
 import { useToast } from '@/shared/lib/contexts/ToastContext';
@@ -45,6 +46,7 @@ export interface WorkspaceState {
   // Multi-provider support
   providers: ProviderConfig[];
   selectedCouncilId: string | null;
+  councilPlan: CouncilPlan | null;
 }
 
 export interface WorkspaceModel {
@@ -84,6 +86,7 @@ export interface WorkspaceModel {
     selectCouncil: (councilId: string | null) => void;
     playCouncil: (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void }) => Promise<void>;
     playMultiModel: (params: { nodeId: string; models: { modelId: string; providerId: ProviderId }[] }) => Promise<void>;
+    startCouncilPlan: (params: { rootNodeId: string; maxDepth: number }) => Promise<void>;
   };
 }
 
@@ -108,6 +111,39 @@ export interface CouncilThinkingStep {
   output: string;
   timestamp: number;
   duration?: number;
+  nodeId?: string;
+}
+
+type BranchStatus = 'queued' | 'running' | 'done' | 'error';
+
+export interface CouncilBranch {
+  id: string;
+  wave: number;
+  modelId: string;
+  providerId: ProviderId;
+  sourceNodeId: string;
+  nodeId: string;
+  status: BranchStatus;
+  error?: string;
+  startedAt?: number;
+  finishedAt?: number;
+}
+
+export interface CouncilMerge {
+  id: string;
+  wave: number;
+  inputNodeIds: string[];
+  outputNodeId: string;
+  providerId: ProviderId;
+  status: BranchStatus;
+  error?: string;
+}
+
+export interface CouncilPlan {
+  maxDepth: number;
+  waves: number;
+  branches: CouncilBranch[];
+  merges: CouncilMerge[];
 }
 
 /** OpenAI API response type */
@@ -145,6 +181,7 @@ export function useWorkspaceModel(): WorkspaceModel {
   // Multi-provider state
   const [providers, setProviders] = React.useState<ProviderConfig[]>([]);
   const [selectedCouncilId, setSelectedCouncilId] = React.useState<string | null>(null);
+  const [councilPlan, setCouncilPlan] = React.useState<CouncilPlan | null>(null);
   
   // LLM Gateway instance
   const gateway = React.useMemo(() => getLLMGateway(), []);
@@ -474,6 +511,8 @@ export function useWorkspaceModel(): WorkspaceModel {
         fromPortIndex: index,
         toNodeId: child.id,
         toPortIndex: 0,
+        providerId: 'openai',
+        color: PROVIDER_COLORS['openai'],
       }));
 
       const existingConnIds = new Set(prev.connections.map((c) => c.id));
@@ -625,55 +664,63 @@ export function useWorkspaceModel(): WorkspaceModel {
     setGraph((prev) => {
       const nodesToDelete = new Set<string>();
       const stack = [nodeId];
-      // Build dependency graph from current connections to find descendants
-      // Optimization: Build adjacency list once?
-      // Given size, simple traversal is fine.
-      
-      const allConnections = prev.connections;
       
       while (stack.length > 0) {
         const currentId = stack.pop()!;
         if (nodesToDelete.has(currentId)) continue;
         nodesToDelete.add(currentId);
-        
-        const children = allConnections
-          .filter(c => c.fromNodeId === currentId)
-          .map(c => c.toNodeId);
-        stack.push(...children);
+        // Добавляем детей (ветви) для удаления
+        prev.nodes
+          .filter(n => n.inputs.some(input => input.nodeId === currentId))
+          .forEach(child => stack.push(child.id));
       }
 
       return {
-        nodes: prev.nodes.filter(n => !nodesToDelete.has(n.id)),
-        connections: prev.connections.filter(c => 
-          !nodesToDelete.has(c.fromNodeId) && !nodesToDelete.has(c.toNodeId)
+        ...prev,
+        nodes: prev.nodes.filter(node => !nodesToDelete.has(node.id)),
+        connections: prev.connections.filter(conn => 
+          !nodesToDelete.has(conn.fromNodeId) && 
+          !nodesToDelete.has(conn.toNodeId)
         ),
       };
     });
   }, [setGraph]);
 
   const duplicateNode = useCallback((nodeId: string) => {
-    setGraph((prev) => {
-      const nodeToDuplicate = prev.nodes.find((n) => n.id === nodeId);
-      if (!nodeToDuplicate) return prev;
+    const nodeToDuplicate = graph.nodes.find((n) => n.id === nodeId);
+    if (!nodeToDuplicate) return;
 
-      const newNode: Node = {
-        ...nodeToDuplicate,
-        id: crypto.randomUUID(),
-        x: nodeToDuplicate.x + 50,
-        y: nodeToDuplicate.y + 50,
-        isRoot: false,
-        isPlaying: false,
-        modelResponse: nodeToDuplicate.modelResponse,
-        context: nodeToDuplicate.context,
-        prompt: nodeToDuplicate.prompt,
-      };
+    const clonedInputs = (nodeToDuplicate.inputs || []).map((input) => ({
+      ...input,
+      id: crypto.randomUUID(),
+      nodeId: '', // will set after node creation
+    }));
+    const clonedOutputs = (nodeToDuplicate.outputs || []).map((output) => ({
+      ...output,
+      id: crypto.randomUUID(),
+      nodeId: '', // will set after node creation
+    }));
 
-      return {
-        ...prev,
-        nodes: [...prev.nodes, newNode],
-      };
-    });
-  }, [setGraph]);
+    const newNodeId = crypto.randomUUID();
+    const newNode: Node = {
+      ...nodeToDuplicate,
+      id: newNodeId,
+      x: nodeToDuplicate.x + 50,
+      y: nodeToDuplicate.y + 50,
+      isRoot: false,
+      isPlaying: false,
+      modelResponse: nodeToDuplicate.modelResponse,
+      context: nodeToDuplicate.context,
+      prompt: nodeToDuplicate.prompt,
+      inputs: clonedInputs.map((i) => ({ ...i, nodeId: newNodeId })),
+      outputs: clonedOutputs.map((o) => ({ ...o, nodeId: newNodeId })),
+    };
+
+    setGraph((prev) => ({
+      ...prev,
+      nodes: [...prev.nodes, newNode],
+    }));
+  }, [graph.nodes, setGraph]);
 
   const copyNodes = useCallback((nodeIds: string[]) => {
     if (nodeIds.length === 0) return;
@@ -969,6 +1016,7 @@ export function useWorkspaceModel(): WorkspaceModel {
             output: response.error ? `⚠️ ${response.error}` : response.content,
             timestamp,
             duration: response.latencyMs,
+            nodeId,
           });
           timestamp += 10;
         });
@@ -991,6 +1039,7 @@ export function useWorkspaceModel(): WorkspaceModel {
             input: 'Оценка и ранжирование ответов экспертов',
             output: `Лучший ответ: ${bestResponse?.modelId ?? 'N/A'}\nСогласие: ${result.stage2.agreementScore}%\n\nОценки:\n${scoresText}`,
             timestamp,
+            nodeId,
           });
           timestamp += 10;
         }
@@ -1007,6 +1056,7 @@ export function useWorkspaceModel(): WorkspaceModel {
           output: result.stage3.finalResponse,
           timestamp,
           duration: result.stage3.latencyMs,
+          nodeId,
         });
 
         steps.forEach((step) => onThinkingStep(step));
@@ -1087,13 +1137,18 @@ export function useWorkspaceModel(): WorkspaceModel {
     });
     
     // Create connections from source to children
-    const newConnections: Connection[] = childNodes.map(child => ({
-      id: crypto.randomUUID(),
-      fromNodeId: source.id,
-      fromPortIndex: 0,
-      toNodeId: child.id,
-      toPortIndex: 0,
-    }));
+    const newConnections: Connection[] = childNodes.map(child => {
+      const providerColor = child.providerId ? PROVIDER_COLORS[child.providerId] : undefined;
+      return {
+        id: crypto.randomUUID(),
+        fromNodeId: source.id,
+        fromPortIndex: 0,
+        toNodeId: child.id,
+        toPortIndex: 0,
+        providerId: child.providerId,
+        color: providerColor ?? 'var(--connection-stroke)',
+      };
+    });
     
     // Add nodes and connections
     setGraph(prev => ({
@@ -1155,6 +1210,18 @@ export function useWorkspaceModel(): WorkspaceModel {
     showToast(`Multi-model: ${models.length} ответов получено`, 'success');
   }, [graph.nodes, providers, gateway, setGraph, showToast]);
 
+  // Stub: start autonomous council plan (planning/execution pipeline to be implemented)
+  const startCouncilPlan = useCallback(async ({ rootNodeId, maxDepth }: { rootNodeId: string; maxDepth: number }) => {
+    const initialPlan: CouncilPlan = {
+      maxDepth,
+      waves: 0,
+      branches: [],
+      merges: [],
+    };
+    setCouncilPlan(initialPlan);
+    // TODO: implement runCouncilPlan with wave planning/execution and plan updates
+  }, []);
+
   const state: WorkspaceState = {
     canvas,
     settings: { model },
@@ -1168,6 +1235,7 @@ export function useWorkspaceModel(): WorkspaceModel {
     canRedo,
     providers,
     selectedCouncilId,
+    councilPlan,
   };
 
   return {
@@ -1207,6 +1275,7 @@ export function useWorkspaceModel(): WorkspaceModel {
       selectCouncil,
       playCouncil,
       playMultiModel,
+      startCouncilPlan,
     },
   };
 }

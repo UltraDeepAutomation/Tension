@@ -28,6 +28,7 @@ export interface ThinkingStep {
   output: string;
   timestamp: number;
   duration?: number;
+  nodeId?: string;
 }
 
 interface ChatPanelProps {
@@ -141,29 +142,51 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             
             {showThinking && (
               <div className="chat-panel-thinking-steps">
-                {thinkingSteps.map((step) => (
-                  <div 
-                    key={step.id} 
-                    className="thinking-step"
-                    style={{ '--stage-color': getStageColor(step.stage) } as React.CSSProperties}
-                  >
-                    <div className="thinking-step-header">
-                      <span className="thinking-step-stage">{getStageLabel(step.stage)}</span>
-                      <span className="thinking-step-agent">
-                        {PROVIDER_ICONS[step.providerId]} {step.agentName}
-                      </span>
-                      <span className="thinking-step-time">{formatTime(step.timestamp)}</span>
-                    </div>
-                    <div className="thinking-step-content">
-                      <MarkdownRenderer content={step.output} />
-                    </div>
-                    {step.duration && (
-                      <div className="thinking-step-duration">
-                        {(step.duration / 1000).toFixed(1)}s
+                {(['divergence', 'convergence', 'synthesis'] as const).map((stageKey) => {
+                  const stepsByStage = thinkingSteps.filter((s) => s.stage === stageKey);
+                  if (stepsByStage.length === 0) return null;
+                  return (
+                    <div key={stageKey} className="thinking-stage-group">
+                      <div
+                        className="thinking-stage-header"
+                        style={{ '--stage-color': getStageColor(stageKey) } as React.CSSProperties}
+                      >
+                        {getStageLabel(stageKey)} · {stepsByStage.length}
                       </div>
-                    )}
-                  </div>
-                ))}
+                      {stepsByStage.map((step) => (
+                        <div 
+                          key={step.id} 
+                          className="thinking-step"
+                          style={{ '--stage-color': getStageColor(step.stage) } as React.CSSProperties}
+                        >
+                          <div className="thinking-step-header">
+                            <span className="thinking-step-stage">{getStageLabel(step.stage)}</span>
+                            <span className="thinking-step-agent">
+                              {PROVIDER_ICONS[step.providerId]} {step.agentName}
+                            </span>
+                            <span className="thinking-step-time">{formatTime(step.timestamp)}</span>
+                          </div>
+                          <div className="thinking-step-content">
+                            <MarkdownRenderer content={step.output} />
+                          </div>
+                          {step.duration && (
+                            <div className="thinking-step-duration">
+                              {(step.duration / 1000).toFixed(1)}s
+                            </div>
+                          )}
+                          {step.nodeId && onNavigateToNode && (
+                            <button
+                              className="chat-message-node-link"
+                              onClick={() => onNavigateToNode(step.nodeId!)}
+                            >
+                              Показать на канвасе →
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

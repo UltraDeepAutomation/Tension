@@ -24,3 +24,13 @@ export const SIDEBAR_WIDTH = 260;       // Width of sidebar in pixels
 export const SIDEBAR_PADDING = 40;      // Additional padding around sidebar
 export const CANVAS_OFFSET_LIMIT = 5000; // Max pan offset in any direction
 export const DEBOUNCE_SAVE_MS = 500;    // Debounce delay for auto-save
+
+/** Цвета провайдеров для линий/бейджей */
+export const PROVIDER_COLORS: Record<string, string> = {
+  openai: '#34c759',    // green
+  google: '#0b7bff',    // blue
+  anthropic: '#ff9f0a', // orange
+  xai: '#9b59b6',       // purple
+  ollama: '#8e8e93',    // gray
+  openrouter: '#6b7280',// neutral
+};

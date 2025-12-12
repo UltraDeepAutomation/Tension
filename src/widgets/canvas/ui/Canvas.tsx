@@ -3,7 +3,7 @@ import type { CanvasState } from '@/entities/canvas/model/types';
 import type { Node, Connection } from '@/entities/node/model/types';
 import { NodeCard } from './NodeCard';
 import { ContextMenu, ContextMenuItem } from '@/widgets/context-menu/ui/ContextMenu';
-import { NODE_WIDTH, NODE_HEIGHT, PORT_SIZE, PORT_GAP, PORTS_TOP, PORT_Y_OFFSET } from '@/shared/config/constants';
+import { NODE_WIDTH, NODE_HEIGHT, PORT_SIZE, PORT_GAP, PORTS_TOP, PORT_Y_OFFSET, PROVIDER_COLORS } from '@/shared/config/constants';
 
 interface CanvasProps {
   canvasState: CanvasState;
@@ -436,12 +436,16 @@ export const Canvas: React.FC<CanvasProps> = ({
       // Use the standard cubic bezier: start -> cp1 -> cp2 -> end
       const path = `M ${fromX} ${fromY} C ${cp1X} ${fromY}, ${cp2X} ${toY}, ${toX} ${toY}`;
 
+      const stroke = conn.color || (conn.providerId ? PROVIDER_COLORS[conn.providerId] : undefined) || 'var(--connection-stroke)';
+
       return (
         <path
           key={conn.id}
           className="canvas-connection"
           d={path}
           fill="none"
+          stroke={stroke}
+          style={stroke ? { stroke } : undefined}
         />
       );
     });
@@ -467,6 +471,15 @@ export const Canvas: React.FC<CanvasProps> = ({
           <svg className="canvas-connections">
             {connectionPaths}
           </svg>
+
+          <div className="canvas-legend">
+            {Object.entries(PROVIDER_COLORS).map(([providerId, color]) => (
+              <div className="canvas-legend__item" key={providerId}>
+                <span className="canvas-legend__dot" style={{ backgroundColor: color }} />
+                <span className="canvas-legend__label">{providerId}</span>
+              </div>
+            ))}
+          </div>
 
           {nodes.map((node) => (
             <NodeCard

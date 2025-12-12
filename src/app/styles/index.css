@@ -676,6 +676,40 @@ body {
   transition: stroke 0.2s;
 }
 
+.canvas-legend {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(20, 22, 26, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.canvas-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #e5e7eb;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.canvas-legend__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+}
+
 @keyframes draw-line {
   to {
     stroke-dashoffset: 0;
@@ -2721,6 +2755,25 @@ body {
   overflow-y: auto;
 }
 
+.thinking-stage-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thinking-stage-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  padding: 4px 8px;
+  border-left: 3px solid var(--stage-color, var(--color-border-strong));
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
 .thinking-step {
   padding: var(--space-2) var(--space-3);
   margin-bottom: var(--space-2);
@@ -2771,6 +2824,130 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/* Multi-Model Picker */
+.multimodel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(2px);
+}
+
+.multimodel-modal {
+  width: 460px;
+  max-height: 70vh;
+  background: var(--color-bg-default);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: fade-in-up 0.15s ease;
+}
+
+.multimodel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-default);
+  font-weight: var(--font-weight-semibold);
+}
+
+.multimodel-close {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+
+.multimodel-list {
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.multimodel-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  cursor: pointer;
+}
+
+.multimodel-item:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.multimodel-name {
+  flex: 1;
+  font-weight: var(--font-weight-medium);
+}
+
+.multimodel-provider {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--color-border-default);
+}
+
+.multimodel-provider--openai { border-color: #10a37f; color: #0c8a69; }
+.multimodel-provider--anthropic { border-color: #d97706; color: #b45309; }
+.multimodel-provider--google { border-color: #4285f4; color: #2563eb; }
+.multimodel-provider--openrouter { border-color: #8b5cf6; color: #7c3aed; }
+.multimodel-provider--xai { border-color: #1a1a1a; color: #111827; }
+.multimodel-provider--ollama { border-color: #0ea5e9; color: #0284c7; }
+
+.multimodel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border-default);
+}
+
+.multimodel-primary,
+.multimodel-secondary {
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-default);
+  cursor: pointer;
+  font-weight: var(--font-weight-semibold);
+}
+
+.multimodel-primary {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.multimodel-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.multimodel-secondary {
+  background: var(--color-bg-subtle);
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .chat-message {

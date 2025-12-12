@@ -10,8 +10,10 @@ import { Minimap } from '@/widgets/minimap/ui/Minimap';
 import { CouncilPanel } from '@/widgets/council-panel';
 import { SearchPanel } from '@/widgets/search-panel';
 import { ChatPanel, type ChatMessage, type ThinkingStep } from '@/widgets/chat-panel';
+import { MultiModelPicker } from '@/widgets/multimodel-picker/ui/MultiModelPicker';
 import { getCouncilById } from '@/shared/lib/council';
 import { Loader2, Users, MessageSquare } from 'lucide-react';
+import type { ProviderId } from '@/entities/node/model/types';
 
 export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
@@ -22,6 +24,16 @@ export const WorkspacePage: React.FC = () => {
   const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([]);
   const [thinkingSteps, setThinkingSteps] = React.useState<ThinkingStep[]>([]);
   const [isChatThinking, setIsChatThinking] = React.useState(false);
+  const [isMultiModelOpen, setIsMultiModelOpen] = React.useState(false);
+  const [multiModelNodeId, setMultiModelNodeId] = React.useState<string | null>(null);
+  const defaultMultiModels = React.useMemo(() => [
+    { modelId: 'gpt-4.1', providerId: 'openai' as const },
+    { modelId: 'claude-3-5-sonnet-20241022', providerId: 'anthropic' as const },
+    { modelId: 'gemini-1.5-pro', providerId: 'google' as const },
+  ], []);
+  const [multiModelSelection, setMultiModelSelection] = React.useState<Set<string>>(
+    () => new Set(defaultMultiModels.map((m) => m.modelId))
+  );
   const { state, actions } = useWorkspaceModel();
   const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
   
@@ -145,6 +157,8 @@ export const WorkspacePage: React.FC = () => {
     if (node) {
       // Center the canvas on this node
       actions.centerOnNode(nodeId);
+      // Открываем чат, если пришли из сообщения
+      setIsChatPanelOpen(true);
     }
   }, [state.nodes, actions]);
 
@@ -153,6 +167,14 @@ export const WorkspacePage: React.FC = () => {
     // This will be handled by Canvas internally via a ref or state lift
     // For now, we just navigate to it
   }, []);
+
+  const handleMultiModelApply = React.useCallback((models: { modelId: string; providerId: ProviderId }[]) => {
+    if (!multiModelNodeId) return;
+    setMultiModelSelection(new Set(models.map((m) => m.modelId)));
+    actions.playMultiModel({ nodeId: multiModelNodeId, models });
+    setIsMultiModelOpen(false);
+    setMultiModelNodeId(null);
+  }, [actions, multiModelNodeId]);
 
   // Handle chat message send
   const handleChatSend = React.useCallback(async (message: string) => {
@@ -298,13 +320,8 @@ export const WorkspacePage: React.FC = () => {
               });
           } : undefined}
           onPlayMultiModel={(nodeId) => {
-            // Default models for multi-model branching
-            const defaultModels = [
-              { modelId: 'gpt-4.1', providerId: 'openai' as const },
-              { modelId: 'claude-3-5-sonnet-20241022', providerId: 'anthropic' as const },
-              { modelId: 'gemini-1.5-pro', providerId: 'google' as const },
-            ];
-            actions.playMultiModel({ nodeId, models: defaultModels });
+            setMultiModelNodeId(nodeId);
+            setIsMultiModelOpen(true);
           }}
         />
         <Toolbar
@@ -405,6 +422,15 @@ export const WorkspacePage: React.FC = () => {
           onSendMessage={handleChatSend}
           onNavigateToNode={navigateToNode}
           isThinking={isChatThinking}
+        />
+        <MultiModelPicker
+          isOpen={isMultiModelOpen}
+          selected={multiModelSelection}
+          onClose={() => {
+            setIsMultiModelOpen(false);
+            setMultiModelNodeId(null);
+          }}
+          onApply={handleMultiModelApply}
         />
       </div>
     </div>

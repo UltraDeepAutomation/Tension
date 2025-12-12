@@ -55,4 +55,8 @@ export interface Connection {
   fromPortIndex: number;
   toNodeId: NodeId;
   toPortIndex: number;
+  /** Цвет соединения для визуализации (связан с providerId) */
+  color?: string;
+  /** Провайдер, задающий цвет линии */
+  providerId?: ProviderId;
 }

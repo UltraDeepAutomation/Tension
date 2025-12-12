@@ -2,6 +2,8 @@ import React from 'react';
 import { Send, X, MessageSquare, Bot, User, ChevronDown, ChevronUp } from 'lucide-react';
 import { MarkdownRenderer } from '@/shared/ui/MarkdownRenderer';
 import type { ProviderId } from '@/entities/node/model/types';
+import type { Council } from '@/entities/council/model/types';
+import type { CouncilPlan, CouncilBranch } from '@/pages/workspace/model/useWorkspaceModel';
 
 /** Сообщение в чате */
 export interface ChatMessage {
@@ -39,6 +41,14 @@ interface ChatPanelProps {
   onSendMessage: (message: string) => void;
   onNavigateToNode?: (nodeId: string) => void;
   isThinking?: boolean;
+  councils: Council[];
+  selectedCouncilId: string | null;
+  onSelectCouncil: (councilId: string | null) => void;
+  maxDepth: number;
+  onChangeMaxDepth: (value: number) => void;
+  onStartPlan?: (rootNodeId: string, maxDepth: number) => void;
+  rootNodeId: string | null;
+  councilPlan?: CouncilPlan | null;
 }
 
 const PROVIDER_ICONS: Record<ProviderId, string> = {
@@ -58,11 +68,43 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendMessage,
   onNavigateToNode,
   isThinking = false,
+  councils,
+  selectedCouncilId,
+  onSelectCouncil,
+  maxDepth,
+  onChangeMaxDepth,
+  onStartPlan,
+  rootNodeId,
+  councilPlan,
 }) => {
   const [input, setInput] = React.useState('');
   const [showThinking, setShowThinking] = React.useState(true);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const groupedWaves = React.useMemo(() => {
+    if (!councilPlan) return [];
+    const map = new Map<number, CouncilBranch[]>();
+    councilPlan.branches.forEach((branch) => {
+      const bucket = map.get(branch.wave);
+      if (bucket) {
+        bucket.push(branch);
+      } else {
+        map.set(branch.wave, [branch]);
+      }
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([wave, branches]) => ({ wave, branches }));
+  }, [councilPlan]);
+
+  const startDisabledReason = React.useMemo(() => {
+    if (!onStartPlan) return 'Автоплан пока недоступен';
+    if (!selectedCouncilId) return 'Выберите council';
+    if (!rootNodeId) return 'Не найдена корневая нода';
+    return null;
+  }, [onStartPlan, selectedCouncilId, rootNodeId]);
+  const isStartDisabled = !!startDisabledReason;
 
   // Auto-scroll to bottom
   React.useEffect(() => {
@@ -129,6 +171,90 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       </div>
 
       <div className="chat-panel-content">
+        <div className="chat-panel-council-settings">
+          <div className="chat-panel-council-row">
+            <label className="chat-panel-label">Council</label>
+            <select
+              className="chat-panel-select"
+              value={selectedCouncilId ?? ''}
+              onChange={(e) => onSelectCouncil(e.target.value || null)}
+            >
+              <option value="">Не выбран</option>
+              {councils.map((council) => (
+                <option key={council.id} value={council.id}>
+                  {council.icon} {council.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="chat-panel-council-row">
+            <label className="chat-panel-label">Глубина</label>
+            <input
+              type="number"
+              min={1}
+              max={6}
+              value={maxDepth}
+              onChange={(e) => onChangeMaxDepth(Number(e.target.value))}
+              className="chat-panel-input"
+            />
+          </div>
+          <div className="chat-panel-council-actions">
+            <button
+              className="chat-panel-button"
+              disabled={isStartDisabled}
+              onClick={() => rootNodeId && onStartPlan?.(rootNodeId, maxDepth)}
+              title={startDisabledReason || undefined}
+            >
+              Запустить план
+            </button>
+            {isStartDisabled && (
+              <span className="chat-panel-hint">{startDisabledReason}</span>
+            )}
+          </div>
+        </div>
+
+        {councilPlan && councilPlan.branches.length > 0 && (
+          <div className="chat-panel-plan">
+            <div className="chat-panel-plan-header">
+              План совета · Глубина {councilPlan.maxDepth} · Волн: {councilPlan.waves}
+            </div>
+            <div className="chat-panel-plan-waves">
+              {groupedWaves.map(({ wave, branches }) => (
+                <div key={wave} className="chat-panel-plan-wave">
+                  <div className="chat-panel-plan-wave-title">Волна {wave + 1}</div>
+                  <div className="chat-panel-plan-branches">
+                    {branches.map((branch) => (
+                      <div key={branch.id} className="chat-panel-plan-branch">
+                        <span className="chat-panel-plan-dot" data-status={branch.status} />
+                        <span className="chat-panel-plan-model">
+                          {PROVIDER_ICONS[branch.providerId]} {branch.modelId}
+                        </span>
+                        <span className="chat-panel-plan-status">
+                          {branch.status}
+                          {branch.error ? ` · ${branch.error}` : ''}
+                        </span>
+                        {branch.nodeId && onNavigateToNode && (
+                          <button
+                            className="chat-panel-plan-link"
+                            onClick={() => onNavigateToNode(branch.nodeId!)}
+                          >
+                            Нода →
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {(!councilPlan || councilPlan.branches.length === 0) && (
+          <div className="chat-panel-plan-empty">
+            План ещё не создан. Запустите council для автоматической оркестрации.
+          </div>
+        )}
+
         {/* Thinking Steps Section */}
         {thinkingSteps.length > 0 && (
           <div className="chat-panel-thinking">

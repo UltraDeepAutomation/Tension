@@ -7,18 +7,16 @@ import { useWorkspaceModel } from '@/pages/workspace/model/useWorkspaceModel';
 import { useOpenAIKey } from '@/features/manage-openai-key/model/useOpenAIKey';
 import { CommandPalette, CommandAction } from '@/widgets/command-palette/ui/CommandPalette';
 import { Minimap } from '@/widgets/minimap/ui/Minimap';
-import { CouncilPanel } from '@/widgets/council-panel';
 import { SearchPanel } from '@/widgets/search-panel';
 import { ChatPanel, type ChatMessage, type ThinkingStep } from '@/widgets/chat-panel';
 import { MultiModelPicker } from '@/widgets/multimodel-picker/ui/MultiModelPicker';
-import { getCouncilById } from '@/shared/lib/council';
+import { getCouncilById, PRESET_COUNCILS } from '@/shared/lib/council';
 import { Loader2, Users, MessageSquare } from 'lucide-react';
 import type { ProviderId } from '@/entities/node/model/types';
 
 export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
   const [isCmdKOpen, setIsCmdKOpen] = React.useState(false);
-  const [isCouncilPanelOpen, setIsCouncilPanelOpen] = React.useState(false);
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
   const [isChatPanelOpen, setIsChatPanelOpen] = React.useState(false);
   const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([]);
@@ -31,11 +29,23 @@ export const WorkspacePage: React.FC = () => {
     { modelId: 'claude-3-5-sonnet-20241022', providerId: 'anthropic' as const },
     { modelId: 'gemini-1.5-pro', providerId: 'google' as const },
   ], []);
+  const { state, actions } = useWorkspaceModel();
+  const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
   const [multiModelSelection, setMultiModelSelection] = React.useState<Set<string>>(
     () => new Set(defaultMultiModels.map((m) => m.modelId))
   );
-  const { state, actions } = useWorkspaceModel();
-  const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
+  const [councilMaxDepth, setCouncilMaxDepth] = React.useState(3);
+  const primaryRootNodeId = React.useMemo(() => {
+    const rootNode = state.nodes.find((node) => node.isRoot) ?? state.nodes[0];
+    return rootNode?.id ?? null;
+  }, [state.nodes]);
+  const handleStartCouncilPlan = React.useCallback(
+    (rootNodeId: string, maxDepth: number) => {
+      actions.startCouncilPlan({ rootNodeId, maxDepth });
+      setIsChatPanelOpen(true);
+    },
+    [actions]
+  );
   
   // Tool state management
   const [isSpacePressed, setIsSpacePressed] = React.useState(false);
@@ -178,30 +188,104 @@ export const WorkspacePage: React.FC = () => {
 
   // Handle chat message send
   const handleChatSend = React.useCallback(async (message: string) => {
-    // Add user message
+    const trimmed = message.trim();
+    if (!trimmed) return;
+
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: message,
+      content: trimmed,
       timestamp: Date.now(),
     };
     setChatMessages(prev => [...prev, userMessage]);
+
+    if (!state.selectedCouncilId) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: 'Выберите council перед запуском',
+          timestamp: Date.now(),
+          agentName: 'System',
+        },
+      ]);
+      return;
+    }
+
+    if (!primaryRootNodeId) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: 'Не найдена корневая нода для запуска. Добавьте узел и попробуйте снова.',
+          timestamp: Date.now(),
+          agentName: 'System',
+        },
+      ]);
+      return;
+    }
+
+    const rootNode = state.nodes.find((node) => node.id === primaryRootNodeId);
+    if (!rootNode) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: 'Узел для запуска не найден. Обновите страницу или создайте новый проект.',
+          timestamp: Date.now(),
+          agentName: 'System',
+        },
+      ]);
+      return;
+    }
+
     setIsChatThinking(true);
-    
-    // TODO: Integrate with Council Engine for real responses
-    // For now, simulate a response
-    setTimeout(() => {
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: `Получено сообщение: "${message}"\n\nCouncil обрабатывает запрос...`,
-        timestamp: Date.now(),
-        agentName: 'Council',
-      };
-      setChatMessages(prev => [...prev, assistantMessage]);
-      setIsChatThinking(false);
-    }, 1500);
-  }, []);
+    setThinkingSteps([]);
+
+    // Обновляем промпт корневой ноды текущим сообщением чата
+    actions.updateNodePrompt(primaryRootNodeId, trimmed);
+
+    actions
+      .playCouncil({
+        nodeId: primaryRootNodeId,
+        councilId: state.selectedCouncilId,
+        onThinkingStep: (step) => {
+          setThinkingSteps((prev) => [...prev, step]);
+
+          if (step.stage === 'synthesis') {
+            const assistantMessage: ChatMessage = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: step.output,
+              timestamp: step.timestamp,
+              agentName: step.agentName,
+              providerId: step.providerId,
+              modelId: step.modelId,
+              nodeId: primaryRootNodeId,
+            };
+            setChatMessages((prev) => [...prev, assistantMessage]);
+            setIsChatThinking(false);
+          }
+        },
+      })
+      .catch((error) => {
+        console.error('chat playCouncil error', error);
+        setIsChatThinking(false);
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: `Council не смог ответить: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+            timestamp: Date.now(),
+            agentName: 'System',
+          },
+        ]);
+      });
+  }, [actions, primaryRootNodeId, state.nodes, state.selectedCouncilId]);
 
   const commandActions: CommandAction[] = React.useMemo(() => [
     { id: 'new-chat', label: 'Create New Chat', perform: actions.createChat, icon: '➕' },
@@ -365,45 +449,6 @@ export const WorkspacePage: React.FC = () => {
           onTestProvider={actions.testProvider}
         />
         
-        {/* Council Panel */}
-        <CouncilPanel
-          isOpen={isCouncilPanelOpen}
-          selectedCouncilId={state.selectedCouncilId}
-          onSelectCouncil={(council) => {
-            actions.selectCouncil(council.id);
-            setIsCouncilPanelOpen(false);
-          }}
-          onClose={() => setIsCouncilPanelOpen(false)}
-        />
-        
-        {/* Council Mode Toggle Button */}
-        <button
-          className={`council-toggle-button ${state.selectedCouncilId ? 'council-toggle-button--active' : ''}`}
-          onClick={() => {
-            if (state.selectedCouncilId) {
-              // Toggle off council mode
-              actions.selectCouncil(null);
-            } else {
-              setIsCouncilPanelOpen(true);
-            }
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setIsCouncilPanelOpen(true);
-          }}
-          title={state.selectedCouncilId 
-            ? `Council: ${getCouncilById(state.selectedCouncilId)?.name} (клик чтобы выключить, ПКМ для выбора)`
-            : 'Включить Council Mode'
-          }
-        >
-          <Users size={18} />
-          {state.selectedCouncilId && (
-            <span className="council-toggle-name">
-              {getCouncilById(state.selectedCouncilId)?.icon}
-            </span>
-          )}
-        </button>
-        
         {/* Chat Panel Toggle Button */}
         <button
           className={`chat-toggle-button ${isChatPanelOpen ? 'chat-toggle-button--active' : ''}`}
@@ -422,6 +467,14 @@ export const WorkspacePage: React.FC = () => {
           onSendMessage={handleChatSend}
           onNavigateToNode={navigateToNode}
           isThinking={isChatThinking}
+          councils={PRESET_COUNCILS}
+          selectedCouncilId={state.selectedCouncilId}
+          onSelectCouncil={actions.selectCouncil}
+          maxDepth={councilMaxDepth}
+          onChangeMaxDepth={setCouncilMaxDepth}
+          rootNodeId={primaryRootNodeId}
+          onStartPlan={handleStartCouncilPlan}
+          councilPlan={state.councilPlan}
         />
         <MultiModelPicker
           isOpen={isMultiModelOpen}

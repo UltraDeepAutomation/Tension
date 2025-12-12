@@ -84,7 +84,7 @@ export interface WorkspaceModel {
     updateProvider: (config: ProviderConfig) => void;
     testProvider: (providerId: ProviderId) => Promise<boolean>;
     selectCouncil: (councilId: string | null) => void;
-    playCouncil: (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void }) => Promise<void>;
+    playCouncil: (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void; silent?: boolean }) => Promise<void>;
     playMultiModel: (params: { nodeId: string; models: { modelId: string; providerId: ProviderId }[] }) => Promise<void>;
     startCouncilPlan: (params: { rootNodeId: string; maxDepth: number }) => Promise<void>;
   };
@@ -182,6 +182,7 @@ export function useWorkspaceModel(): WorkspaceModel {
   const [providers, setProviders] = React.useState<ProviderConfig[]>([]);
   const [selectedCouncilId, setSelectedCouncilId] = React.useState<string | null>(null);
   const [councilPlan, setCouncilPlan] = React.useState<CouncilPlan | null>(null);
+  const councilPlanAbortControllerRef = React.useRef<AbortController | null>(null);
   
   // LLM Gateway instance
   const gateway = React.useMemo(() => getLLMGateway(), []);
@@ -966,11 +967,13 @@ export function useWorkspaceModel(): WorkspaceModel {
   }, []);
   
   // Council execution
-  const playCouncil = useCallback(async (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void }) => {
-    const { nodeId, councilId, onThinkingStep } = params;
+  const playCouncil = useCallback(async (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void; silent?: boolean }) => {
+    const { nodeId, councilId, onThinkingStep, silent = false } = params;
     const council = getCouncilById(councilId);
     if (!council) {
-      showToast('Council not found', 'error');
+      if (!silent) {
+        showToast('Council not found', 'error');
+      }
       return;
     }
     
@@ -979,7 +982,9 @@ export function useWorkspaceModel(): WorkspaceModel {
     
     const prompt = node.prompt || node.context;
     if (!prompt.trim()) {
-      showToast('Введите запрос', 'error');
+      if (!silent) {
+        showToast('Введите запрос', 'error');
+      }
       return;
     }
     
@@ -1076,7 +1081,9 @@ export function useWorkspaceModel(): WorkspaceModel {
         ),
       }));
       
-      showToast(`Council завершён! Confidence: ${result.stage3.confidence}%`, 'success');
+      if (!silent) {
+        showToast(`Council завершён! Confidence: ${result.stage3.confidence}%`, 'success');
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Council error';
       setGraph(prev => ({
@@ -1085,7 +1092,9 @@ export function useWorkspaceModel(): WorkspaceModel {
           n.id === nodeId ? { ...n, isPlaying: false, error: errorMessage } : n
         ),
       }));
-      showToast(errorMessage, 'error');
+      if (!silent) {
+        showToast(errorMessage, 'error');
+      }
     }
   }, [graph.nodes, councilEngine, setGraph, showToast]);
 
@@ -1210,17 +1219,151 @@ export function useWorkspaceModel(): WorkspaceModel {
     showToast(`Multi-model: ${models.length} ответов получено`, 'success');
   }, [graph.nodes, providers, gateway, setGraph, showToast]);
 
-  // Stub: start autonomous council plan (planning/execution pipeline to be implemented)
-  const startCouncilPlan = useCallback(async ({ rootNodeId, maxDepth }: { rootNodeId: string; maxDepth: number }) => {
-    const initialPlan: CouncilPlan = {
-      maxDepth,
-      waves: 0,
-      branches: [],
+  const updateBranchStatuses = useCallback((branchIds: string[], status: BranchStatus, error?: string) => {
+    if (branchIds.length === 0) return;
+    const idSet = new Set(branchIds);
+    setCouncilPlan(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        branches: prev.branches.map(branch => {
+          if (!idSet.has(branch.id)) return branch;
+          return {
+            ...branch,
+            status,
+            error: status === 'error' ? error : undefined,
+          };
+        }),
+      };
+    });
+  }, []);
+
+  const buildCouncilPlan = useCallback((rootNodeId: string, maxDepth: number): CouncilPlan => {
+    const normalizedDepth = Math.max(1, Math.min(maxDepth, 6));
+    const adjacency = new Map<string, Set<string>>();
+    graph.connections.forEach(conn => {
+      if (!adjacency.has(conn.fromNodeId)) {
+        adjacency.set(conn.fromNodeId, new Set());
+      }
+      adjacency.get(conn.fromNodeId)!.add(conn.toNodeId);
+    });
+
+    const waves: string[][] = [];
+    const visited = new Set<string>();
+    let currentLevel: string[] = [];
+    if (graph.nodes.find(n => n.id === rootNodeId)) {
+      currentLevel = [rootNodeId];
+    }
+
+    let depth = 0;
+    while (currentLevel.length > 0 && depth < normalizedDepth) {
+      waves.push(currentLevel);
+      currentLevel.forEach(nodeId => visited.add(nodeId));
+
+      const nextLevelSet = new Set<string>();
+      currentLevel.forEach(nodeId => {
+        adjacency.get(nodeId)?.forEach(childId => {
+          if (!visited.has(childId)) {
+            nextLevelSet.add(childId);
+          }
+        });
+      });
+
+      currentLevel = Array.from(nextLevelSet);
+      depth += 1;
+    }
+
+    const branches: CouncilBranch[] = [];
+    waves.forEach((nodeIds, waveIndex) => {
+      nodeIds.forEach(nodeId => {
+        const node = graph.nodes.find(n => n.id === nodeId);
+        const providerId = (node?.providerId ?? 'openai') as ProviderId;
+        const modelId = node?.modelId ?? 'gpt-4o';
+        const parentConn = graph.connections.find(conn => conn.toNodeId === nodeId);
+
+        branches.push({
+          id: crypto.randomUUID(),
+          wave: waveIndex,
+          modelId,
+          providerId,
+          sourceNodeId: parentConn?.fromNodeId ?? nodeId,
+          nodeId,
+          status: 'queued',
+        });
+      });
+    });
+
+    return {
+      maxDepth: normalizedDepth,
+      waves: waves.length,
+      branches,
       merges: [],
     };
-    setCouncilPlan(initialPlan);
-    // TODO: implement runCouncilPlan with wave planning/execution and plan updates
-  }, []);
+  }, [graph.connections, graph.nodes]);
+
+  const runCouncilPlan = useCallback(async (plan: CouncilPlan, councilId: string, signal: AbortSignal) => {
+    for (let waveIndex = 0; waveIndex < plan.waves; waveIndex++) {
+      if (signal.aborted) {
+        throw new DOMException('Plan aborted', 'AbortError');
+      }
+
+      const waveBranches = plan.branches.filter(branch => branch.wave === waveIndex);
+      if (waveBranches.length === 0) continue;
+
+      updateBranchStatuses(
+        waveBranches.map(branch => branch.id),
+        'running'
+      );
+
+      await Promise.all(
+        waveBranches.map(async (branch) => {
+          if (signal.aborted) {
+            throw new DOMException('Plan aborted', 'AbortError');
+          }
+          try {
+            await playCouncil({ nodeId: branch.nodeId, councilId, silent: true });
+            updateBranchStatuses([branch.id], 'done');
+          } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
+              throw error;
+            }
+            const errorMessage = error instanceof Error ? error.message : 'Ошибка ветки';
+            updateBranchStatuses([branch.id], 'error', errorMessage);
+          }
+        })
+      );
+    }
+  }, [playCouncil, updateBranchStatuses]);
+
+  const startCouncilPlan = useCallback(async ({ rootNodeId, maxDepth }: { rootNodeId: string; maxDepth: number }) => {
+    if (!selectedCouncilId) {
+      showToast('Выберите council перед запуском плана', 'error');
+      return;
+    }
+
+    const plan = buildCouncilPlan(rootNodeId, maxDepth);
+    if (plan.branches.length === 0) {
+      setCouncilPlan(plan);
+      showToast('Не удалось построить план: нет доступных узлов', 'error');
+      return;
+    }
+
+    councilPlanAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    councilPlanAbortControllerRef.current = controller;
+
+    setCouncilPlan(plan);
+
+    try {
+      await runCouncilPlan(plan, selectedCouncilId, controller.signal);
+      showToast('План Council завершён', 'success');
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        const message = error instanceof Error ? error.message : 'Ошибка выполнения плана';
+        showToast(message, 'error');
+      }
+    }
+  }, [buildCouncilPlan, runCouncilPlan, selectedCouncilId, showToast]);
 
   const state: WorkspaceState = {
     canvas,

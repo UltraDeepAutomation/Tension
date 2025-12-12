@@ -30,12 +30,23 @@ export function useCouncilPlan({
 }: UseCouncilPlanParams): UseCouncilPlanResult {
   const [councilPlan, setCouncilPlan] = React.useState<CouncilPlan | null>(null);
   const abortControllerRef = React.useRef<AbortController | null>(null);
+  const isDev = import.meta.env?.DEV ?? false;
+
+  const debugPlan = React.useCallback(
+    (message: string, payload?: Record<string, unknown>) => {
+      if (!isDev) return;
+      const details = payload ? ` ${JSON.stringify(payload)}` : '';
+      console.debug(`[CouncilPlan] ${message}${details}`);
+    },
+    [isDev]
+  );
 
   const updateBranchStatuses = React.useCallback((branchIds: string[], status: BranchStatus, error?: string) => {
     if (branchIds.length === 0) return;
     const idSet = new Set(branchIds);
     setCouncilPlan((prev) => {
       if (!prev) return prev;
+      debugPlan('updateBranchStatuses', { status, branchIds, error });
       return {
         ...prev,
         branches: prev.branches.map((branch) => {
@@ -50,7 +61,7 @@ export function useCouncilPlan({
         }),
       };
     });
-  }, []);
+  }, [debugPlan]);
 
   const buildCouncilPlan = React.useCallback(
     (rootNodeId: string, maxDepth: number): CouncilPlan => {
@@ -63,6 +74,7 @@ export function useCouncilPlan({
         adjacency.get(conn.fromNodeId)!.add(conn.toNodeId);
       });
 
+      debugPlan('buildCouncilPlan:start', { rootNodeId, maxDepth: normalizedDepth });
       const waves: string[][] = [];
       const visited = new Set<string>();
       let currentLevel: string[] = [];
@@ -108,14 +120,16 @@ export function useCouncilPlan({
         });
       });
 
-      return {
+      const plan: CouncilPlan = {
         maxDepth: normalizedDepth,
         waves: waves.length,
         branches,
         merges: [],
       };
+      debugPlan('buildCouncilPlan:done', { waves: plan.waves, branches: plan.branches.length });
+      return plan;
     },
-    [graph.connections, graph.nodes]
+    [debugPlan, graph.connections, graph.nodes]
   );
 
   const runCouncilPlan = React.useCallback(
@@ -127,6 +141,7 @@ export function useCouncilPlan({
 
         const waveBranches = plan.branches.filter((branch) => branch.wave === waveIndex);
         if (waveBranches.length === 0) continue;
+        debugPlan('runCouncilPlan:wave:start', { waveIndex, branches: waveBranches.length });
 
         updateBranchStatuses(
           waveBranches.map((branch) => branch.id),
@@ -150,9 +165,11 @@ export function useCouncilPlan({
             }
           })
         );
+        debugPlan('runCouncilPlan:wave:complete', { waveIndex });
       }
+      debugPlan('runCouncilPlan:all-waves-complete');
     },
-    [playCouncil, updateBranchStatuses]
+    [debugPlan, playCouncil, updateBranchStatuses]
   );
 
   const startCouncilPlan = React.useCallback(
@@ -174,22 +191,26 @@ export function useCouncilPlan({
       abortControllerRef.current = controller;
 
       setCouncilPlan(plan);
+      debugPlan('startCouncilPlan', { rootNodeId, maxDepth });
 
       try {
         await runCouncilPlan(plan, selectedCouncilId, controller.signal);
         showToast('План Council завершён', 'success');
+        debugPlan('startCouncilPlan:completed');
       } catch (error) {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
           const message = error instanceof Error ? error.message : 'Ошибка выполнения плана';
           showToast(message, 'error');
+          debugPlan('startCouncilPlan:error', { message });
         }
       }
     },
-    [buildCouncilPlan, runCouncilPlan, selectedCouncilId, showToast]
+    [buildCouncilPlan, debugPlan, runCouncilPlan, selectedCouncilId, showToast]
   );
 
   const abortCouncilPlan = React.useCallback(() => {
     abortControllerRef.current?.abort();
+    debugPlan('abortCouncilPlan');
   }, []);
 
   return {

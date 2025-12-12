@@ -116,15 +116,6 @@ export interface CouncilThinkingStep {
   nodeId?: string;
 }
 
-/** OpenAI API response type */
-interface OpenAIResponse {
-  choices: Array<{
-    message: {
-      content: string;
-    };
-  }>;
-}
-
 export function useWorkspaceModel(): WorkspaceModel {
   const [canvas, setCanvas] = React.useState<CanvasState>(defaultCanvasState);
   const [model, setModel] = React.useState<string>('gpt-4.1');
@@ -259,7 +250,7 @@ export function useWorkspaceModel(): WorkspaceModel {
       } finally {
         setIsSaving(false);
       }
-    }, 500);
+    }, DEBOUNCE_SAVE_MS);
     return () => clearTimeout(timeoutId);
   }, [graph.nodes, graph.connections, currentChatId]);
 
@@ -493,25 +484,30 @@ export function useWorkspaceModel(): WorkspaceModel {
       };
     });
 
-    // 3. API Call
+    // 3. LLM Call (via Gateway)
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: modelName,
-          n: branchCount,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.7,
-        }),
+      // Legacy path uses explicit apiKey. Configure OpenAI provider in-memory for this run.
+      gateway.configureProvider({
+        id: 'openai',
+        name: 'OpenAI',
+        apiKey,
+        isEnabled: true,
       });
 
-      if (!response.ok) throw new Error(`OpenAI error: ${response.status}`);
-      const data: OpenAIResponse = await response.json();
-      const choices = data.choices.slice(0, branchCount);
+      const multi = await gateway.queryMultiple({
+        model: modelName,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        n: branchCount,
+      });
+
+      const choices = multi.choices
+        .slice(0, branchCount)
+        .map((choice) => ({
+          message: {
+            content: choice.content,
+          },
+        }));
 
       // 4. Build recursive call data from createdNodes and API responses
       const recursiveCallsData: Array<{
@@ -909,22 +905,20 @@ export function useWorkspaceModel(): WorkspaceModel {
 
   // Provider management
   const updateProvider = useCallback((config: ProviderConfig) => {
-    setProviders(prev => {
-      const existing = prev.findIndex(p => p.id === config.id);
-      if (existing >= 0) {
-        const updated = [...prev];
-        updated[existing] = config;
-        return updated;
-      }
-      return [...prev, config];
+    setProviders((prev) => {
+      const existing = prev.findIndex((p) => p.id === config.id);
+      const nextProviders = existing >= 0
+        ? prev.map((p, index) => (index === existing ? config : p))
+        : [...prev, config];
+
+      // Persist exactly what we set (avoid stale closures)
+      void saveSetting('providers', nextProviders);
+      return nextProviders;
     });
     
     // Configure gateway
     gateway.configureProvider(config);
-    
-    // Save to IndexedDB
-    void saveSetting('providers', providers);
-  }, [gateway, providers]);
+  }, [gateway]);
   
   const testProvider = useCallback(async (providerId: ProviderId): Promise<boolean> => {
     return gateway.testProvider(providerId);
@@ -966,8 +960,10 @@ export function useWorkspaceModel(): WorkspaceModel {
     
     try {
       const result = await councilEngine.execute(council, prompt, (progress) => {
-        // Could update UI with progress here (hooked into Chat Panel via onThinkingStep)
-        console.log(`Council ${progress.stageName}: ${progress.progress}%`);
+        // Keep console noise out of prod builds.
+        if (import.meta.env.DEV) {
+          console.debug(`Council ${progress.stageName}: ${progress.progress}%`);
+        }
       });
 
       // Emit thinking steps to UI if requested

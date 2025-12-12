@@ -13,6 +13,7 @@ import { MultiModelPicker } from '@/widgets/multimodel-picker/ui/MultiModelPicke
 import { getCouncilById, PRESET_COUNCILS } from '@/shared/lib/council';
 import { Loader2, Users, MessageSquare } from 'lucide-react';
 import type { ProviderId } from '@/entities/node/model/types';
+import type { AutonomousCouncilLogEvent } from '@/pages/workspace/model/useAutonomousCouncil';
 
 export const WorkspacePage: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
@@ -43,6 +44,29 @@ export const WorkspacePage: React.FC = () => {
     const rootNode = state.nodes.find((node) => node.isRoot) ?? state.nodes[0];
     return rootNode?.id ?? null;
   }, [state.nodes]);
+
+  const appendCouncilLogToChat = React.useCallback((event: AutonomousCouncilLogEvent) => {
+    const levelPrefix = event.level === 'error'
+      ? '⛔'
+      : event.level === 'warn'
+        ? '⚠️'
+        : event.level === 'debug'
+          ? '🔎'
+          : 'ℹ️';
+
+    const content = `${event.details ?? ''}${event.data !== undefined ? `\n\n\`\`\`json\n${JSON.stringify(event.data, null, 2)}\n\`\`\`` : ''}`.trim();
+
+    const message: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'system',
+      agentName: 'System',
+      summary: `${levelPrefix} ${event.summary}`,
+      content: content || ' ',
+      timestamp: event.timestamp,
+    };
+
+    setChatMessages((prev) => [...prev, message]);
+  }, []);
 
   React.useEffect(() => {
     updateProviderRef.current = actions.updateProvider;
@@ -307,6 +331,7 @@ export const WorkspacePage: React.FC = () => {
         rootNodeId: primaryRootNodeId,
         question: trimmed,
         maxDepth: councilMaxDepth,
+        onLog: appendCouncilLogToChat,
         onThinkingStep: (step) => {
           setThinkingSteps((prev) => [...prev, step]);
 
@@ -340,7 +365,7 @@ export const WorkspacePage: React.FC = () => {
           },
         ]);
       });
-  }, [actions, councilMaxDepth, primaryRootNodeId, state.currentChatId, state.nodes, state.selectedCouncilId]);
+  }, [actions, appendCouncilLogToChat, councilMaxDepth, primaryRootNodeId, state.currentChatId, state.nodes, state.selectedCouncilId]);
 
   const commandActions: CommandAction[] = React.useMemo(() => [
     { id: 'new-chat', label: 'Create New Chat', perform: actions.createChat, icon: '➕' },
@@ -448,7 +473,7 @@ export const WorkspacePage: React.FC = () => {
 
             const run = state.selectedCouncilId
               ? actions.playCouncil({ nodeId, councilId: state.selectedCouncilId, onThinkingStep })
-              : actions.startAutonomousCouncil({ rootNodeId: nodeId, question: prompt, maxDepth: councilMaxDepth, onThinkingStep });
+              : actions.startAutonomousCouncil({ rootNodeId: nodeId, question: prompt, maxDepth: councilMaxDepth, onThinkingStep, onLog: appendCouncilLogToChat });
 
             run.catch((error) => {
               console.error('Council run error', error);

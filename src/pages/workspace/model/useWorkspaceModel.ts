@@ -32,7 +32,7 @@ import { getCouncilEngine, getCouncilById, PRESET_COUNCILS } from '@/shared/lib/
 import type { Council, CouncilResult } from '@/entities/council';
 import { autoLayoutNodes, arrangeInGrid } from '@/shared/lib/autoLayout';
 import type { CouncilPlan } from './councilPlanTypes';
-import { useAutonomousCouncil } from './useAutonomousCouncil';
+import { useAutonomousCouncil, type AutonomousCouncilLogEvent } from './useAutonomousCouncil';
 
 const ALL_PROVIDERS: ProviderId[] = ['openai', 'anthropic', 'google', 'openrouter', 'xai', 'ollama'];
 
@@ -55,7 +55,7 @@ export interface WorkspaceState {
   councilPlan: CouncilPlan | null;
 }
 
-export interface WorkspaceModel {
+export type WorkspaceModel = {
   state: WorkspaceState;
   actions: {
     setTool: (tool: CanvasState['tool']) => void;
@@ -95,7 +95,7 @@ export interface WorkspaceModel {
     playCouncil: (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void; silent?: boolean }) => Promise<void>;
     playMultiModel: (params: { nodeId: string; models: { modelId: string; providerId: ProviderId }[] }) => Promise<void>;
     startCouncilPlan: (params: { rootNodeId: string; maxDepth: number }) => Promise<void>;
-    startAutonomousCouncil: (params: { rootNodeId: string; question: string; maxDepth: number; onThinkingStep?: (step: CouncilThinkingStep) => void }) => Promise<void>;
+    startAutonomousCouncil: (params: { rootNodeId: string; question: string; maxDepth: number; onThinkingStep?: (step: CouncilThinkingStep) => void; onLog?: (event: AutonomousCouncilLogEvent) => void }) => Promise<void>;
     stopCouncil: () => void;
     resetCouncil: () => void;
   };
@@ -1139,11 +1139,11 @@ export function useWorkspaceModel(): WorkspaceModel {
 
   React.useEffect(() => {
     // Abort long-running council orchestration when switching chats.
-    abortAutonomousCouncil();
+    abortAutonomousCouncil('chat_switch');
   }, [abortAutonomousCouncil, currentChatId]);
 
   const stopCouncil = React.useCallback(() => {
-    abortAutonomousCouncil();
+    abortAutonomousCouncil('user_stop');
   }, [abortAutonomousCouncil]);
 
   const resetCouncil = React.useCallback(() => {
@@ -1329,8 +1329,8 @@ export function useWorkspaceModel(): WorkspaceModel {
       playCouncil,
       playMultiModel,
       startCouncilPlan,
-      startAutonomousCouncil: async ({ rootNodeId, question, maxDepth, onThinkingStep }) => {
-        await startAutonomousCouncil({ rootNodeId, question, maxDepth, onThinkingStep });
+      startAutonomousCouncil: async ({ rootNodeId, question, maxDepth, onThinkingStep, onLog }) => {
+        await startAutonomousCouncil({ rootNodeId, question, maxDepth, onThinkingStep, onLog });
       },
       stopCouncil,
       resetCouncil,

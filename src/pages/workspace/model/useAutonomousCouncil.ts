@@ -17,17 +17,29 @@ interface UseAutonomousCouncilParams {
   allowedProviders?: ProviderId[];
 }
 
+export type AutonomousCouncilAbortReason = 'chat_switch' | 'user_stop' | 'reset' | 'restart' | 'unknown';
+
+export interface AutonomousCouncilLogEvent {
+  chatId: string | null;
+  timestamp: number;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  summary: string;
+  details?: string;
+  data?: unknown;
+}
+
 interface StartAutonomousCouncilParams {
   rootNodeId: string;
   question?: string;
   maxDepth: number;
   onThinkingStep?: (step: CouncilThinkingStep) => void;
+  onLog?: (event: AutonomousCouncilLogEvent) => void;
 }
 
 interface UseAutonomousCouncilResult {
   councilPlan: CouncilPlan | null;
   startAutonomousCouncil: (params: StartAutonomousCouncilParams) => Promise<void>;
-  abortAutonomousCouncil: () => void;
+  abortAutonomousCouncil: (reason?: AutonomousCouncilAbortReason) => void;
   resetAutonomousCouncil: () => void;
 }
 
@@ -57,6 +69,14 @@ function safeJsonParse<T>(text: string): T | null {
 function hasProviderApiKey(providers: ProviderConfig[], providerId: ProviderId): boolean {
   const provider = providers.find((p) => p.id === providerId);
   return Boolean(provider?.apiKey && provider.isEnabled);
+}
+
+function safePrettyJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 function isProviderAllowed(allowedProviders: ProviderId[] | undefined, providerId: ProviderId): boolean {
@@ -189,6 +209,7 @@ export function useAutonomousCouncil({
   const [councilPlan, setCouncilPlan] = React.useState<CouncilPlan | null>(null);
   const planByChatRef = React.useRef<Map<string, CouncilPlan | null>>(new Map());
   const abortControllerRef = React.useRef<AbortController | null>(null);
+  const abortReasonRef = React.useRef<AutonomousCouncilAbortReason>('unknown');
 
   const graphRef = React.useRef(graph);
   React.useEffect(() => {
@@ -213,6 +234,7 @@ export function useAutonomousCouncil({
     }
     const stored = planByChatRef.current.get(chatId) ?? null;
     setCouncilPlan(stored);
+    abortReasonRef.current = 'chat_switch';
     abortControllerRef.current?.abort();
   }, [chatId]);
 
@@ -229,14 +251,43 @@ export function useAutonomousCouncil({
     [chatId]
   );
 
-  const abortAutonomousCouncil = React.useCallback(() => {
+  const abortAutonomousCouncil = React.useCallback((reason: AutonomousCouncilAbortReason = 'unknown') => {
+    abortReasonRef.current = reason;
     abortControllerRef.current?.abort();
   }, []);
 
   const resetAutonomousCouncil = React.useCallback(() => {
+    abortReasonRef.current = 'reset';
     abortControllerRef.current?.abort();
     persistPlan(null);
   }, [persistPlan]);
+
+  const emitLog = React.useCallback(
+    (params: {
+      onLog?: (event: AutonomousCouncilLogEvent) => void;
+      level: AutonomousCouncilLogEvent['level'];
+      summary: string;
+      details?: string;
+      data?: unknown;
+    }) => {
+      const event: AutonomousCouncilLogEvent = {
+        chatId,
+        timestamp: Date.now(),
+        level: params.level,
+        summary: params.summary,
+        details: params.details,
+        data: params.data,
+      };
+
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.debug('[autonomous-council]', event);
+      }
+
+      params.onLog?.(event);
+    },
+    [chatId]
+  );
 
   const updateBranchStatuses = React.useCallback(
     (branchIds: string[], status: BranchStatus, error?: string) => {
@@ -352,7 +403,7 @@ Depth: ${params.depth}`;
   );
 
   const startAutonomousCouncil = React.useCallback(
-    async ({ rootNodeId, question, maxDepth, onThinkingStep }: StartAutonomousCouncilParams) => {
+    async ({ rootNodeId, question, maxDepth, onThinkingStep, onLog }: StartAutonomousCouncilParams) => {
       const rootNode = graphRef.current.nodes.find((n) => n.id === rootNodeId);
       if (!rootNode) {
         showToast('Корневая нода не найдена', 'error');
@@ -365,9 +416,19 @@ Depth: ${params.depth}`;
         return;
       }
 
-      abortControllerRef.current?.abort();
+      if (abortControllerRef.current) {
+        abortReasonRef.current = 'restart';
+        abortControllerRef.current.abort();
+      }
       const controller = new AbortController();
       abortControllerRef.current = controller;
+
+      emitLog({
+        onLog,
+        level: 'info',
+        summary: 'Council run started',
+        details: `mode=${mode}\nmaxDepth=${maxDepth}\nquestion=${resolvedQuestion}`,
+      });
 
       // Ensure at least one provider is configured
       const anyConfigured = providers.some((p) => p.isEnabled && p.apiKey);
@@ -400,16 +461,39 @@ Depth: ${params.depth}`;
 
       for (let depth = 0; depth < normalizedDepth; depth++) {
         if (controller.signal.aborted) {
-          throw new DOMException('Autonomous council aborted', 'AbortError');
+          throw new DOMException(`Autonomous council aborted (${abortReasonRef.current})`, 'AbortError');
         }
 
         const entry = graphRef.current.nodes.find((n) => n.id === entryNodeId) ?? rootNode;
 
+        emitLog({
+          onLog,
+          level: 'info',
+          summary: `Wave ${depth + 1}/${normalizedDepth}: planning`,
+          details: `entryNodeId=${entry.id}`,
+        });
+
         const planned = await planWave({ question: resolvedQuestion, depth });
+
+        emitLog({
+          onLog,
+          level: 'debug',
+          summary: `Wave ${depth + 1}: planner output`,
+          details: safePrettyJson(planned),
+        });
+
         const branches = planned.branches
           .filter((b) => isProviderAllowed(allowedProviders, b.providerId))
           .filter((b) => hasProviderApiKey(providers, b.providerId))
           .slice(0, 5);
+
+        emitLog({
+          onLog,
+          level: 'info',
+          summary: `Wave ${depth + 1}: branches selected (${branches.length})`,
+          details: branches.map((b, i) => `${i + 1}. ${b.providerId}/${b.modelId} — ${b.prompt.slice(0, 120)}`).join('\n'),
+          data: branches,
+        });
 
         if (branches.length === 0) {
           showToast('Нет доступных моделей (проверьте API keys)', 'error');
@@ -417,6 +501,13 @@ Depth: ${params.depth}`;
         }
 
         const { childNodes, connections } = createBranchNodes({ parent: entry, branches });
+
+        emitLog({
+          onLog,
+          level: 'info',
+          summary: `Wave ${depth + 1}: nodes created (${childNodes.length} branches)`,
+          details: childNodes.map((n) => `${n.id} @ (${Math.round(n.x)}, ${Math.round(n.y)}) ${n.providerId}/${n.modelId}`).join('\n'),
+        });
 
         const branchPlanItems: CouncilBranch[] = childNodes.map((node) => ({
           id: crypto.randomUUID(),
@@ -447,6 +538,17 @@ Depth: ${params.depth}`;
         const branchResults = await Promise.all(
           childNodes.map(async (node, idx) => {
             try {
+              if (controller.signal.aborted) {
+                throw new DOMException(`Autonomous council aborted (${abortReasonRef.current})`, 'AbortError');
+              }
+
+              emitLog({
+                onLog,
+                level: 'info',
+                summary: `Wave ${depth + 1}: branch ${idx + 1}/${childNodes.length} query`,
+                details: `${node.providerId}/${node.modelId}\nnodeId=${node.id}`,
+              });
+
               const request: LLMRequest = {
                 model: node.modelId ?? 'gpt-4o',
                 messages: [{ role: 'user', content: node.prompt || resolvedQuestion }],
@@ -485,9 +587,24 @@ Depth: ${params.depth}`;
                 nodeId: node.id,
               });
 
+              emitLog({
+                onLog,
+                level: result.error ? 'warn' : 'info',
+                summary: `Wave ${depth + 1}: branch ${idx + 1} done`,
+                details: `${node.providerId}/${node.modelId}\nlatencyMs=${result.latencyMs}\n${result.error ? `error=${result.error}` : 'ok'}`,
+              });
+
               return { providerId: (node.providerId ?? 'openai') as ProviderId, modelId: node.modelId ?? 'unknown', content: output };
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : 'Branch error';
+
+              emitLog({
+                onLog,
+                level: error instanceof DOMException && error.name === 'AbortError' ? 'warn' : 'error',
+                summary: `Wave ${depth + 1}: branch ${idx + 1} failed`,
+                details: errorMessage,
+              });
+
               setGraphSafe((prev) => ({
                 ...prev,
                 nodes: prev.nodes.map((n) => (n.id === node.id ? { ...n, isPlaying: false, modelResponse: `⚠️ ${errorMessage}`, error: errorMessage } : n)),
@@ -512,6 +629,14 @@ Depth: ${params.depth}`;
         }
 
         const mergePrompt = buildMergePrompt(resolvedQuestion, branchResults);
+
+        emitLog({
+          onLog,
+          level: 'info',
+          summary: `Wave ${depth + 1}: merge selected ${resolvedMergeModel.providerId}/${resolvedMergeModel.modelId}`,
+          details: `sources=${branchResults.length}`,
+        });
+
         const { mergeNode, connections: mergeConnections } = createMergeNode({
           wave: depth,
           parent: entry,
@@ -546,6 +671,13 @@ Depth: ${params.depth}`;
 
         updateMergeStatus(mergePlanItem.id, 'running');
 
+        emitLog({
+          onLog,
+          level: 'info',
+          summary: `Wave ${depth + 1}: merge query`,
+          details: `nodeId=${mergeNode.id}\n${mergeNode.providerId}/${mergeNode.modelId}`,
+        });
+
         const mergeRequest: LLMRequest = {
           model: mergeNode.modelId ?? 'gpt-4o',
           messages: [{ role: 'user', content: mergePrompt }],
@@ -553,6 +685,13 @@ Depth: ${params.depth}`;
         const mergeResult: LLMResponse = await gateway.query(mergeRequest);
 
         const mergeOutput = mergeResult.error ? `⚠️ ${mergeResult.error}` : mergeResult.content;
+
+        emitLog({
+          onLog,
+          level: mergeResult.error ? 'warn' : 'info',
+          summary: `Wave ${depth + 1}: merge done`,
+          details: `latencyMs=${mergeResult.latencyMs}\n${mergeResult.error ? `error=${mergeResult.error}` : 'ok'}`,
+        });
 
         setGraphSafe((prev) => ({
           ...prev,

@@ -23,6 +23,8 @@ export const WorkspacePage: React.FC = () => {
   const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([]);
   const [thinkingSteps, setThinkingSteps] = React.useState<ThinkingStep[]>([]);
   const [isChatThinking, setIsChatThinking] = React.useState(false);
+  const [verboseLogs, setVerboseLogs] = React.useState(false);
+  const [councilLogsVersion, setCouncilLogsVersion] = React.useState(0);
   const [isMultiModelOpen, setIsMultiModelOpen] = React.useState(false);
   const [multiModelNodeId, setMultiModelNodeId] = React.useState<string | null>(null);
   const defaultMultiModels = React.useMemo(() => [
@@ -40,12 +42,24 @@ export const WorkspacePage: React.FC = () => {
   const [councilMaxDepth, setCouncilMaxDepth] = React.useState(3);
   const chatMessagesByChatIdRef = React.useRef<Map<string, ChatMessage[]>>(new Map());
   const thinkingStepsByChatIdRef = React.useRef<Map<string, ThinkingStep[]>>(new Map());
+  const verboseLogsByChatIdRef = React.useRef<Map<string, boolean>>(new Map());
+  const verboseLogsRef = React.useRef(verboseLogs);
+  const councilLogsByChatIdRef = React.useRef<Map<string, AutonomousCouncilLogEvent[]>>(new Map());
+  const councilRunMetaByChatIdRef = React.useRef<Map<string, { startedAt: number; question: string; mode: string }>>(new Map());
   const primaryRootNodeId = React.useMemo(() => {
     const rootNode = state.nodes.find((node) => node.isRoot) ?? state.nodes[0];
     return rootNode?.id ?? null;
   }, [state.nodes]);
 
+  React.useEffect(() => {
+    verboseLogsRef.current = verboseLogs;
+  }, [verboseLogs]);
+
   const appendCouncilLogToChat = React.useCallback((event: AutonomousCouncilLogEvent) => {
+    if (!verboseLogsRef.current && event.level !== 'warn' && event.level !== 'error') {
+      return;
+    }
+
     const levelPrefix = event.level === 'error'
       ? '⛔'
       : event.level === 'warn'
@@ -67,6 +81,27 @@ export const WorkspacePage: React.FC = () => {
 
     setChatMessages((prev) => [...prev, message]);
   }, []);
+
+  const appendCouncilLogToStore = React.useCallback((event: AutonomousCouncilLogEvent) => {
+    const chatId = state.currentChatId;
+    if (!chatId) return;
+    const prev = councilLogsByChatIdRef.current.get(chatId) ?? [];
+    councilLogsByChatIdRef.current.set(chatId, [...prev, event]);
+    setCouncilLogsVersion((v) => v + 1);
+  }, [state.currentChatId]);
+
+  const buildOnLog = React.useCallback((event: AutonomousCouncilLogEvent) => {
+    appendCouncilLogToStore(event);
+    appendCouncilLogToChat(event);
+  }, [appendCouncilLogToChat, appendCouncilLogToStore]);
+
+  const startCouncilRunLogs = React.useCallback((question: string) => {
+    const chatId = state.currentChatId;
+    if (!chatId) return;
+    councilLogsByChatIdRef.current.set(chatId, []);
+    councilRunMetaByChatIdRef.current.set(chatId, { startedAt: Date.now(), question, mode: state.councilMode });
+    setCouncilLogsVersion((v) => v + 1);
+  }, [state.councilMode, state.currentChatId]);
 
   React.useEffect(() => {
     updateProviderRef.current = actions.updateProvider;
@@ -90,13 +125,50 @@ export const WorkspacePage: React.FC = () => {
     if (!chatId) {
       setChatMessages([]);
       setThinkingSteps([]);
+      setVerboseLogs(false);
       return;
     }
 
     setChatMessages(chatMessagesByChatIdRef.current.get(chatId) ?? []);
     setThinkingSteps(thinkingStepsByChatIdRef.current.get(chatId) ?? []);
+    setVerboseLogs(verboseLogsByChatIdRef.current.get(chatId) ?? false);
     setIsChatThinking(false);
   }, [state.currentChatId]);
+
+  const getHasCouncilLogs = React.useCallback(() => {
+    const chatId = state.currentChatId;
+    if (!chatId) return false;
+    const logs = councilLogsByChatIdRef.current.get(chatId);
+    return Boolean(logs && logs.length > 0);
+  }, [state.currentChatId]);
+
+  const downloadCouncilLogs = React.useCallback(() => {
+    const chatId = state.currentChatId;
+    if (!chatId) return;
+    const logs = councilLogsByChatIdRef.current.get(chatId) ?? [];
+    const meta = councilRunMetaByChatIdRef.current.get(chatId);
+
+    const payload = {
+      schema: 'tension.council.logs.v1',
+      exportedAt: Date.now(),
+      chatId,
+      run: meta ?? null,
+      councilMode: state.councilMode,
+      allowedProviders: state.allowedProviders,
+      logs,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeTs = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = `council-logs-${chatId}-${safeTs}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [state.allowedProviders, state.councilMode, state.currentChatId]);
 
   React.useEffect(() => {
     const chatId = state.currentChatId;
@@ -109,6 +181,12 @@ export const WorkspacePage: React.FC = () => {
     if (!chatId) return;
     thinkingStepsByChatIdRef.current.set(chatId, thinkingSteps);
   }, [thinkingSteps, state.currentChatId]);
+
+  React.useEffect(() => {
+    const chatId = state.currentChatId;
+    if (!chatId) return;
+    verboseLogsByChatIdRef.current.set(chatId, verboseLogs);
+  }, [verboseLogs, state.currentChatId]);
   const handleStartCouncilPlan = React.useCallback(
     (rootNodeId: string, maxDepth: number) => {
       const chatId = state.currentChatId;
@@ -116,10 +194,13 @@ export const WorkspacePage: React.FC = () => {
         setThinkingSteps([]);
         thinkingStepsByChatIdRef.current.set(chatId, []);
       }
-      actions.startCouncilPlan({ rootNodeId, maxDepth });
+      const node = state.nodes.find((n) => n.id === rootNodeId);
+      const question = (node?.prompt || node?.context || '').trim();
+      startCouncilRunLogs(question || '');
+      actions.startAutonomousCouncil({ rootNodeId, question, maxDepth, onLog: buildOnLog });
       setIsChatPanelOpen(true);
     },
-    [actions, state.currentChatId]
+    [actions, buildOnLog, startCouncilRunLogs, state.currentChatId, state.nodes]
   );
 
   const handleStopCouncil = React.useCallback(() => {
@@ -323,6 +404,8 @@ export const WorkspacePage: React.FC = () => {
     setIsChatThinking(true);
     setThinkingSteps([]);
 
+    startCouncilRunLogs(trimmed);
+
     // Обновляем промпт корневой ноды текущим сообщением чата
     actions.updateNodePrompt(primaryRootNodeId, trimmed);
 
@@ -331,7 +414,7 @@ export const WorkspacePage: React.FC = () => {
         rootNodeId: primaryRootNodeId,
         question: trimmed,
         maxDepth: councilMaxDepth,
-        onLog: appendCouncilLogToChat,
+        onLog: buildOnLog,
         onThinkingStep: (step) => {
           setThinkingSteps((prev) => [...prev, step]);
 
@@ -365,7 +448,7 @@ export const WorkspacePage: React.FC = () => {
           },
         ]);
       });
-  }, [actions, appendCouncilLogToChat, councilMaxDepth, primaryRootNodeId, state.currentChatId, state.nodes, state.selectedCouncilId]);
+  }, [actions, buildOnLog, councilMaxDepth, primaryRootNodeId, startCouncilRunLogs, state.currentChatId, state.nodes, state.selectedCouncilId]);
 
   const commandActions: CommandAction[] = React.useMemo(() => [
     { id: 'new-chat', label: 'Create New Chat', perform: actions.createChat, icon: '➕' },
@@ -473,7 +556,16 @@ export const WorkspacePage: React.FC = () => {
 
             const run = state.selectedCouncilId
               ? actions.playCouncil({ nodeId, councilId: state.selectedCouncilId, onThinkingStep })
-              : actions.startAutonomousCouncil({ rootNodeId: nodeId, question: prompt, maxDepth: councilMaxDepth, onThinkingStep, onLog: appendCouncilLogToChat });
+              : (() => {
+                  startCouncilRunLogs(prompt);
+                  return actions.startAutonomousCouncil({
+                    rootNodeId: nodeId,
+                    question: prompt,
+                    maxDepth: councilMaxDepth,
+                    onThinkingStep,
+                    onLog: buildOnLog,
+                  });
+                })();
 
             run.catch((error) => {
               console.error('Council run error', error);
@@ -545,6 +637,10 @@ export const WorkspacePage: React.FC = () => {
           onSendMessage={handleChatSend}
           onNavigateToNode={navigateToNode}
           isThinking={isChatThinking}
+          verboseLogs={verboseLogs}
+          onChangeVerboseLogs={setVerboseLogs}
+          hasCouncilLogs={getHasCouncilLogs()}
+          onDownloadCouncilLogs={downloadCouncilLogs}
           councils={PRESET_COUNCILS}
           selectedCouncilId={state.selectedCouncilId}
           onSelectCouncil={actions.selectCouncil}

@@ -9,10 +9,18 @@
      BRAND COLORS (Theme-independent)
      ═══════════════════════════════════════════════════════════════ */
   
-  --color-primary: #6366f1;
-  --color-primary-light: #818cf8;
-  --color-primary-dark: #4f46e5;
-  --color-primary-soft: #eef2ff;
+  --color-accent: #90ccf4;
+  --color-accent-light: #b6e1ff;
+  --color-accent-dark: #62b0e6;
+  --color-accent-soft: rgba(144, 204, 244, 0.18);
+  --color-accent-ring: rgba(144, 204, 244, 0.26);
+
+  --color-primary: var(--color-accent);
+  --color-primary-light: var(--color-accent-light);
+  --color-primary-dark: var(--color-accent-dark);
+  --color-primary-soft: var(--color-accent-soft);
+
+  --focus-ring: 0 0 0 3px var(--color-accent-ring);
   
   /* Semantic */
   --color-success: #22c55e;
@@ -131,7 +139,7 @@
   --color-border-focus: var(--color-primary-light);
   
   /* Semantic colors for dark theme */
-  --color-primary-soft: rgba(99, 102, 241, 0.2);
+  --color-primary-soft: var(--color-accent-soft);
   --color-error-soft: rgba(239, 68, 68, 0.15);
   --color-error-light: #f87171;
   --color-success-soft: rgba(34, 197, 94, 0.15);

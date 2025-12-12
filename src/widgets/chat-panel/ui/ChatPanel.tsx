@@ -42,6 +42,8 @@ interface ChatPanelProps {
   onSendMessage: (message: string) => void;
   onNavigateToNode?: (nodeId: string) => void;
   isThinking?: boolean;
+  verboseLogs?: boolean;
+  onChangeVerboseLogs?: (value: boolean) => void;
   councils: Council[];
   selectedCouncilId: string | null;
   onSelectCouncil: (councilId: string | null) => void;
@@ -51,6 +53,8 @@ interface ChatPanelProps {
   onChangeAllowedProviders: (providers: ProviderId[]) => void;
   onStopCouncil?: () => void;
   onResetCouncil?: () => void;
+  hasCouncilLogs?: boolean;
+  onDownloadCouncilLogs?: () => void;
   maxDepth: number;
   onChangeMaxDepth: (value: number) => void;
   onStartPlan?: (rootNodeId: string, maxDepth: number) => void;
@@ -75,6 +79,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendMessage,
   onNavigateToNode,
   isThinking = false,
+  verboseLogs = false,
+  onChangeVerboseLogs,
   councils,
   selectedCouncilId,
   onSelectCouncil,
@@ -84,6 +90,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onChangeAllowedProviders,
   onStopCouncil,
   onResetCouncil,
+  hasCouncilLogs = false,
+  onDownloadCouncilLogs,
   maxDepth,
   onChangeMaxDepth,
   onStartPlan,
@@ -208,6 +216,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             </select>
           </div>
 
+          {onChangeVerboseLogs && (
+            <div className="chat-panel-council-row">
+              <label className="chat-panel-label">Verbose logs</label>
+              <label className="chat-panel-switch" aria-label="Verbose logs">
+                <input
+                  type="checkbox"
+                  checked={verboseLogs}
+                  onChange={(e) => onChangeVerboseLogs(e.target.checked)}
+                />
+                <span className="chat-panel-switch__track">
+                  <span className="chat-panel-switch__thumb" />
+                </span>
+              </label>
+            </div>
+          )}
+
           <div className="chat-panel-council-row">
             <label className="chat-panel-label">API</label>
             <div className="chat-panel-provider-grid">
@@ -264,6 +288,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             >
               Запустить план
             </button>
+
+            {onDownloadCouncilLogs && (
+              <button
+                className="chat-panel-button chat-panel-button--secondary"
+                onClick={onDownloadCouncilLogs}
+                disabled={!hasCouncilLogs}
+                title={!hasCouncilLogs ? 'Нет логов для скачивания' : 'Скачать полные логи Council (JSON)'}
+                type="button"
+              >
+                Download logs
+              </button>
+            )}
             {onStopCouncil && (
               <button
                 className="chat-panel-button chat-panel-button--danger"

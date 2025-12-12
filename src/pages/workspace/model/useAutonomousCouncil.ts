@@ -43,6 +43,29 @@ interface UseAutonomousCouncilResult {
   resetAutonomousCouncil: () => void;
 }
 
+type CouncilUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cost?: number;
+};
+
+type CouncilRunPhaseMetric = {
+  kind: 'planner' | 'branch' | 'merge';
+  wave: number;
+  providerId?: ProviderId;
+  modelId?: string;
+  nodeId?: string;
+  latencyMs?: number;
+  usage?: CouncilUsage;
+  error?: string;
+};
+
+type PlannerWaveResult = {
+  plan: PlannerResult;
+  metrics: CouncilRunPhaseMetric;
+};
+
 type PlannerBranchSpec = { providerId: ProviderId; modelId: string; prompt: string };
 
 type PlannerResult = {
@@ -337,7 +360,7 @@ export function useAutonomousCouncil({
   );
 
   const planWave = React.useCallback(
-    async (params: { question: string; depth: number; onLog?: (event: AutonomousCouncilLogEvent) => void }): Promise<PlannerResult> => {
+    async (params: { question: string; depth: number; onLog?: (event: AutonomousCouncilLogEvent) => void }): Promise<PlannerWaveResult> => {
       const availableModels = gateway.getAvailableModels();
 
       const plannerModels = mode === 'chatgpt_only'
@@ -428,7 +451,18 @@ Depth: ${params.depth}`;
       });
 
       if (parsed?.branches?.length) {
-        return parsed;
+        return {
+          plan: parsed,
+          metrics: {
+            kind: 'planner',
+            wave: params.depth,
+            providerId: (response.provider ?? 'openai') as ProviderId,
+            modelId: response.model ?? plannerModelId,
+            latencyMs: response.latencyMs,
+            usage: response.usage as CouncilUsage | undefined,
+            error: response.error,
+          },
+        };
       }
 
       // Fallback: simple heuristic
@@ -443,11 +477,22 @@ Depth: ${params.depth}`;
       }));
 
       return {
-        branches,
-        mergeModel: fallbackModels[0]
-          ? { providerId: fallbackModels[0].provider, modelId: fallbackModels[0].id }
-          : { providerId: 'openai', modelId: 'gpt-4o' },
-        continue: params.depth < 1,
+        plan: {
+          branches,
+          mergeModel: fallbackModels[0]
+            ? { providerId: fallbackModels[0].provider, modelId: fallbackModels[0].id }
+            : { providerId: 'openai', modelId: 'gpt-4o' },
+          continue: params.depth < 1,
+        },
+        metrics: {
+          kind: 'planner',
+          wave: params.depth,
+          providerId: (response.provider ?? 'openai') as ProviderId,
+          modelId: response.model ?? plannerModelId,
+          latencyMs: response.latencyMs,
+          usage: response.usage as CouncilUsage | undefined,
+          error: response.error,
+        },
       };
     },
     [allowedProviders, gateway, mode, providers]
@@ -473,6 +518,67 @@ Depth: ${params.depth}`;
       }
       const controller = new AbortController();
       abortControllerRef.current = controller;
+
+      const runStartedAt = Date.now();
+      const phaseMetrics: CouncilRunPhaseMetric[] = [];
+
+      const sumUsage = (items: (CouncilUsage | undefined)[]) => {
+        return items.reduce<CouncilUsage>(
+          (acc, u) => {
+            if (!u) return acc;
+            return {
+              inputTokens: (acc.inputTokens ?? 0) + (u.inputTokens ?? 0),
+              outputTokens: (acc.outputTokens ?? 0) + (u.outputTokens ?? 0),
+              totalTokens: (acc.totalTokens ?? 0) + (u.totalTokens ?? 0),
+              cost: (acc.cost ?? 0) + (u.cost ?? 0),
+            };
+          },
+          {}
+        );
+      };
+
+      const buildRunSummary = (status: 'completed' | 'aborted' | 'failed', abortReason?: AutonomousCouncilAbortReason, errorMessage?: string) => {
+        const planner = phaseMetrics.filter((m) => m.kind === 'planner');
+        const branches = phaseMetrics.filter((m) => m.kind === 'branch');
+        const merges = phaseMetrics.filter((m) => m.kind === 'merge');
+
+        const plannerUsage = sumUsage(planner.map((m) => m.usage));
+        const branchUsage = sumUsage(branches.map((m) => m.usage));
+        const mergeUsage = sumUsage(merges.map((m) => m.usage));
+        const totalUsage = sumUsage([plannerUsage, branchUsage, mergeUsage]);
+
+        const sumLatency = (arr: CouncilRunPhaseMetric[]) => arr.reduce((s, m) => s + (m.latencyMs ?? 0), 0);
+
+        return {
+          status,
+          abortReason,
+          error: errorMessage,
+          startedAt: runStartedAt,
+          finishedAt: Date.now(),
+          durationMs: Date.now() - runStartedAt,
+          totals: {
+            usage: totalUsage,
+            latencyMs: sumLatency(phaseMetrics),
+          },
+          planner: {
+            count: planner.length,
+            usage: plannerUsage,
+            latencyMs: sumLatency(planner),
+          },
+          branches: {
+            count: branches.length,
+            usage: branchUsage,
+            latencyMs: sumLatency(branches),
+            errors: branches.filter((b) => Boolean(b.error)).map((b) => ({ wave: b.wave, nodeId: b.nodeId, providerId: b.providerId, modelId: b.modelId, error: b.error })),
+          },
+          merges: {
+            count: merges.length,
+            usage: mergeUsage,
+            latencyMs: sumLatency(merges),
+            errors: merges.filter((b) => Boolean(b.error)).map((b) => ({ wave: b.wave, nodeId: b.nodeId, providerId: b.providerId, modelId: b.modelId, error: b.error })),
+          },
+        };
+      };
 
       emitLog({
         onLog,
@@ -510,30 +616,33 @@ Depth: ${params.depth}`;
 
       let entryNodeId = rootNodeId;
 
-      for (let depth = 0; depth < normalizedDepth; depth++) {
-        if (controller.signal.aborted) {
-          throw new DOMException(`Autonomous council aborted (${abortReasonRef.current})`, 'AbortError');
-        }
+      try {
+        for (let depth = 0; depth < normalizedDepth; depth++) {
+          if (controller.signal.aborted) {
+            throw new DOMException(`Autonomous council aborted (${abortReasonRef.current})`, 'AbortError');
+          }
 
-        const entry = graphRef.current.nodes.find((n) => n.id === entryNodeId) ?? rootNode;
+          const entry = graphRef.current.nodes.find((n) => n.id === entryNodeId) ?? rootNode;
 
-        emitLog({
-          onLog,
-          level: 'info',
-          summary: `Wave ${depth + 1}/${normalizedDepth}: planning`,
-          details: `entryNodeId=${entry.id}`,
-        });
+          emitLog({
+            onLog,
+            level: 'info',
+            summary: `Wave ${depth + 1}/${normalizedDepth}: planning`,
+            details: `entryNodeId=${entry.id}`,
+          });
 
-        const planned = await planWave({ question: resolvedQuestion, depth, onLog });
+          const plannedWave = await planWave({ question: resolvedQuestion, depth, onLog });
+          phaseMetrics.push(plannedWave.metrics);
+          const planned = plannedWave.plan;
 
-        emitLog({
-          onLog,
-          level: 'debug',
-          summary: `Wave ${depth + 1}: planner output`,
-          details: safePrettyJson(planned),
-        });
+          emitLog({
+            onLog,
+            level: 'debug',
+            summary: `Wave ${depth + 1}: planner output`,
+            details: safePrettyJson(planned),
+          });
 
-        const filteredOut = planned.branches
+          const filteredOut = planned.branches
           .map((b) => {
             const reasons: string[] = [];
             if (!isProviderAllowed(allowedProviders, b.providerId)) reasons.push('provider_not_allowed');
@@ -604,9 +713,9 @@ Depth: ${params.depth}`;
 
         updateBranchStatuses(branchPlanItems.map((b) => b.id), 'running');
 
-        const branchResults = await Promise.all(
-          childNodes.map(async (node, idx) => {
-            try {
+          const branchResults = await Promise.all(
+            childNodes.map(async (node, idx) => {
+              try {
               if (controller.signal.aborted) {
                 throw new DOMException(`Autonomous council aborted (${abortReasonRef.current})`, 'AbortError');
               }
@@ -636,6 +745,17 @@ Depth: ${params.depth}`;
               });
 
               const result: LLMResponse = await gateway.query(request);
+
+              phaseMetrics.push({
+                kind: 'branch',
+                wave: depth,
+                providerId: (node.providerId ?? 'openai') as ProviderId,
+                modelId: node.modelId ?? undefined,
+                nodeId: node.id,
+                latencyMs: result.latencyMs,
+                usage: result.usage as CouncilUsage | undefined,
+                error: result.error,
+              });
 
               const output = result.error ? `⚠️ ${result.error}` : result.content;
 
@@ -689,6 +809,17 @@ Depth: ${params.depth}`;
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : 'Branch error';
 
+              phaseMetrics.push({
+                kind: 'branch',
+                wave: depth,
+                providerId: (node.providerId ?? 'openai') as ProviderId,
+                modelId: node.modelId ?? undefined,
+                nodeId: node.id,
+                latencyMs: undefined,
+                usage: undefined,
+                error: errorMessage,
+              });
+
               emitLog({
                 onLog,
                 level: error instanceof DOMException && error.name === 'AbortError' ? 'warn' : 'error',
@@ -703,8 +834,8 @@ Depth: ${params.depth}`;
               updateBranchStatuses([branchPlanItems[idx].id], 'error', errorMessage);
               return { providerId: (node.providerId ?? 'openai') as ProviderId, modelId: node.modelId ?? 'unknown', content: `⚠️ ${errorMessage}` };
             }
-          })
-        );
+            })
+          );
 
         const mergeModel = planned.mergeModel && hasProviderApiKey(providers, planned.mergeModel.providerId)
           ? planned.mergeModel
@@ -781,6 +912,17 @@ Depth: ${params.depth}`;
         };
         const mergeResult: LLMResponse = await gateway.query(mergeRequest);
 
+        phaseMetrics.push({
+          kind: 'merge',
+          wave: depth,
+          providerId: (mergeNode.providerId ?? 'openai') as ProviderId,
+          modelId: mergeNode.modelId ?? undefined,
+          nodeId: mergeNode.id,
+          latencyMs: mergeResult.latencyMs,
+          usage: mergeResult.usage as CouncilUsage | undefined,
+          error: mergeResult.error,
+        });
+
         const mergeOutput = mergeResult.error ? `⚠️ ${mergeResult.error}` : mergeResult.content;
 
         emitLog({
@@ -838,9 +980,38 @@ Depth: ${params.depth}`;
         });
 
         entryNodeId = mergeNode.id;
-      }
+        }
 
-      showToast('Autonomous Council: готово', 'success');
+        emitLog({
+          onLog,
+          level: 'info',
+          summary: 'Council run completed',
+          data: buildRunSummary('completed'),
+        });
+
+        showToast('Autonomous Council: готово', 'success');
+      } catch (error) {
+        const isAbort = error instanceof DOMException && error.name === 'AbortError';
+        const abortReason = abortReasonRef.current;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        emitLog({
+          onLog,
+          level: isAbort ? 'warn' : 'error',
+          summary: isAbort ? 'Council run aborted' : 'Council run failed',
+          details: isAbort ? `reason=${abortReason}` : errorMessage,
+          data: buildRunSummary(isAbort ? 'aborted' : 'failed', abortReason, isAbort ? undefined : errorMessage),
+        });
+
+        if (!isAbort) {
+          showToast('Autonomous Council: ошибка', 'error');
+        }
+        throw error;
+      } finally {
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
+      }
     },
     [allowedProviders, gateway, mode, persistPlan, planWave, providers, setGraphSafe, showToast, updateBranchStatuses, updateMergeStatus]
   );

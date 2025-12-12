@@ -355,18 +355,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   <div className="chat-panel-plan-branches">
                     {branches.map((branch) => (
                       <div key={branch.id} className="chat-panel-plan-branch">
-                        <span className="chat-panel-plan-dot" data-status={branch.status} />
-                        <span className="chat-panel-plan-model">
-                          {PROVIDER_ICONS[branch.providerId]} {branch.modelId}
-                        </span>
-                        <span className="chat-panel-plan-status">
-                          {branch.status}
-                          {branch.error ? ` · ${branch.error}` : ''}
-                        </span>
+                        <div className="chat-panel-plan-branch__meta">
+                          <span className="chat-panel-plan-dot" data-status={branch.status} />
+                          <span className="chat-panel-plan-model" title={branch.modelId}>
+                            {PROVIDER_ICONS[branch.providerId]} {branch.modelId}
+                          </span>
+                          <span
+                            className="chat-panel-plan-status"
+                            data-status={branch.status}
+                            title={branch.error || undefined}
+                          >
+                            {branch.status}
+                          </span>
+                        </div>
+
                         {branch.nodeId && onNavigateToNode && (
                           <button
                             className="chat-panel-plan-link"
                             onClick={() => onNavigateToNode(branch.nodeId!)}
+                            type="button"
                           >
                             Нода →
                           </button>

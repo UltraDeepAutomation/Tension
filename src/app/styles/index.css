@@ -2870,6 +2870,140 @@ body {
   color: var(--color-text-muted);
 }
 
+/* Council Plan */
+.chat-panel-plan {
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+}
+
+.chat-panel-plan-header {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-top: 1px solid var(--color-border-default);
+  background: var(--color-bg-elevated);
+}
+
+.chat-panel-plan-waves {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chat-panel-plan-wave-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chat-panel-plan-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-panel-plan-branch {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: var(--color-bg-subtle);
+}
+
+.chat-panel-plan-branch__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-panel-plan-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-border-strong);
+  flex-shrink: 0;
+}
+
+.chat-panel-plan-dot[data-status='queued'] { background: var(--color-border-strong); }
+.chat-panel-plan-dot[data-status='running'] { background: var(--color-warning); }
+.chat-panel-plan-dot[data-status='done'] { background: var(--color-success); }
+.chat-panel-plan-dot[data-status='error'] { background: var(--color-error); }
+
+.chat-panel-plan-model {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel-plan-status {
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.chat-panel-plan-status[data-status='queued'] {
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+}
+
+.chat-panel-plan-status[data-status='running'] {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.chat-panel-plan-status[data-status='done'] {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.chat-panel-plan-status[data-status='error'] {
+  background: var(--color-error-soft);
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.chat-panel-plan-link {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.chat-panel-plan-link:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-strong);
+}
+
 /* Thinking Steps */
 .chat-panel-thinking {
   border-bottom: 1px solid var(--color-border-default);

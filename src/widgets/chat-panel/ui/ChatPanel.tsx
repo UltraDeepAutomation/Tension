@@ -3,7 +3,7 @@ import { Send, X, MessageSquare, Bot, User, ChevronDown, ChevronUp } from 'lucid
 import { MarkdownRenderer } from '@/shared/ui/MarkdownRenderer';
 import type { ProviderId } from '@/entities/node/model/types';
 import type { Council } from '@/entities/council/model/types';
-import type { CouncilPlan, CouncilBranch } from '@/pages/workspace/model/useWorkspaceModel';
+import type { CouncilPlan, CouncilBranch } from '@/pages/workspace/model/councilPlanTypes';
 
 /** Сообщение в чате */
 export interface ChatMessage {

@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Node, Connection } from '@/entities/node/model/types';
-import type { ProviderConfig, ProviderId } from '@/shared/lib/llm';
+import type { LLMGateway, LLMRequest, LLMResponse, ProviderConfig, ProviderId } from '@/shared/lib/llm';
 import type { ToastType } from '@/shared/lib/contexts/ToastContext';
 import type { CouncilPlan, CouncilBranch, CouncilMerge, BranchStatus } from './councilPlanTypes';
 import { PROVIDER_COLORS, NODE_HEIGHT } from '@/shared/config/constants';
@@ -10,12 +10,11 @@ interface UseAutonomousCouncilParams {
   chatId: string | null;
   graph: { nodes: Node[]; connections: Connection[] };
   providers: ProviderConfig[];
-  gateway: {
-    getAvailableModels: () => Array<{ id: string; provider: ProviderId }>;
-    query: (request: { model: string; messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> }) => Promise<{ content: string; error?: string; provider: ProviderId; latencyMs: number }>;
-  };
+  gateway: Pick<LLMGateway, 'getAvailableModels' | 'query'>;
   setGraph: React.Dispatch<React.SetStateAction<{ nodes: Node[]; connections: Connection[] }>>;
   showToast: (message: string, type?: ToastType) => void;
+  mode?: 'autonomous' | 'chatgpt_only';
+  allowedProviders?: ProviderId[];
 }
 
 interface StartAutonomousCouncilParams {
@@ -29,6 +28,7 @@ interface UseAutonomousCouncilResult {
   councilPlan: CouncilPlan | null;
   startAutonomousCouncil: (params: StartAutonomousCouncilParams) => Promise<void>;
   abortAutonomousCouncil: () => void;
+  resetAutonomousCouncil: () => void;
 }
 
 type PlannerBranchSpec = { providerId: ProviderId; modelId: string; prompt: string };
@@ -57,6 +57,11 @@ function safeJsonParse<T>(text: string): T | null {
 function hasProviderApiKey(providers: ProviderConfig[], providerId: ProviderId): boolean {
   const provider = providers.find((p) => p.id === providerId);
   return Boolean(provider?.apiKey && provider.isEnabled);
+}
+
+function isProviderAllowed(allowedProviders: ProviderId[] | undefined, providerId: ProviderId): boolean {
+  if (!allowedProviders || allowedProviders.length === 0) return true;
+  return allowedProviders.includes(providerId);
 }
 
 function buildMergePrompt(question: string, branchResults: Array<{ modelId: string; providerId: ProviderId; content: string }>): string {
@@ -178,10 +183,28 @@ export function useAutonomousCouncil({
   gateway,
   setGraph,
   showToast,
+  mode = 'autonomous',
+  allowedProviders,
 }: UseAutonomousCouncilParams): UseAutonomousCouncilResult {
   const [councilPlan, setCouncilPlan] = React.useState<CouncilPlan | null>(null);
   const planByChatRef = React.useRef<Map<string, CouncilPlan | null>>(new Map());
   const abortControllerRef = React.useRef<AbortController | null>(null);
+
+  const graphRef = React.useRef(graph);
+  React.useEffect(() => {
+    graphRef.current = graph;
+  }, [graph]);
+
+  const setGraphSafe = React.useCallback(
+    (updater: (prev: { nodes: Node[]; connections: Connection[] }) => { nodes: Node[]; connections: Connection[] }) => {
+      setGraph((prev) => {
+        const next = updater(prev);
+        graphRef.current = next;
+        return next;
+      });
+    },
+    [setGraph]
+  );
 
   React.useEffect(() => {
     if (!chatId) {
@@ -194,11 +217,14 @@ export function useAutonomousCouncil({
   }, [chatId]);
 
   const persistPlan = React.useCallback(
-    (next: CouncilPlan | null) => {
-      if (chatId) {
-        planByChatRef.current.set(chatId, next);
-      }
-      setCouncilPlan(next);
+    (next: CouncilPlan | null | ((prev: CouncilPlan | null) => CouncilPlan | null)) => {
+      setCouncilPlan((prev) => {
+        const resolved = typeof next === 'function' ? (next as (p: CouncilPlan | null) => CouncilPlan | null)(prev) : next;
+        if (chatId) {
+          planByChatRef.current.set(chatId, resolved);
+        }
+        return resolved;
+      });
     },
     [chatId]
   );
@@ -206,6 +232,11 @@ export function useAutonomousCouncil({
   const abortAutonomousCouncil = React.useCallback(() => {
     abortControllerRef.current?.abort();
   }, []);
+
+  const resetAutonomousCouncil = React.useCallback(() => {
+    abortControllerRef.current?.abort();
+    persistPlan(null);
+  }, [persistPlan]);
 
   const updateBranchStatuses = React.useCallback(
     (branchIds: string[], status: BranchStatus, error?: string) => {
@@ -255,6 +286,20 @@ export function useAutonomousCouncil({
   const planWave = React.useCallback(
     async (params: { question: string; depth: number }): Promise<PlannerResult> => {
       const availableModels = gateway.getAvailableModels();
+
+      const plannerModels = mode === 'chatgpt_only'
+        ? availableModels.filter((m) => m.provider === 'openai')
+        : availableModels.filter((m) => isProviderAllowed(allowedProviders, m.provider));
+
+      const configuredModels = plannerModels.filter(
+        (m) => isProviderAllowed(allowedProviders, m.provider) && hasProviderApiKey(providers, m.provider)
+      );
+      const plannerModelId =
+        configuredModels.find((m) => m.provider === 'openai' && m.id === 'gpt-4o')?.id ??
+        configuredModels.find((m) => m.provider === 'openai')?.id ??
+        configuredModels[0]?.id ??
+        plannerModels[0]?.id ??
+        'gpt-4o';
       const sampleModels = availableModels.slice(0, 24).map((m) => `${m.provider}:${m.id}`).join(', ');
 
       const system = `You are an autonomous LLM Council planner.
@@ -269,7 +314,13 @@ Available models sample: ${sampleModels}`;
       const user = `Question: ${params.question}
 Depth: ${params.depth}`;
 
-      const response = await gateway.query({ model: 'gpt-4o', messages: [{ role: 'system', content: system }, { role: 'user', content: user }] });
+      const response = await gateway.query({
+        model: plannerModelId,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      });
       const raw = response.error ? '' : response.content;
       const json = extractJsonObject(raw);
       const parsed = json ? safeJsonParse<PlannerResult>(json) : null;
@@ -280,7 +331,7 @@ Depth: ${params.depth}`;
 
       // Fallback: simple heuristic
       const fallbackModels = availableModels
-        .filter((m) => hasProviderApiKey(providers, m.provider))
+        .filter((m) => isProviderAllowed(allowedProviders, m.provider) && hasProviderApiKey(providers, m.provider))
         .slice(0, 3);
 
       const branches: PlannerBranchSpec[] = fallbackModels.map((m, i) => ({
@@ -297,12 +348,12 @@ Depth: ${params.depth}`;
         continue: params.depth < 1,
       };
     },
-    [gateway, providers]
+    [allowedProviders, gateway, mode, providers]
   );
 
   const startAutonomousCouncil = React.useCallback(
     async ({ rootNodeId, question, maxDepth, onThinkingStep }: StartAutonomousCouncilParams) => {
-      const rootNode = graph.nodes.find((n) => n.id === rootNodeId);
+      const rootNode = graphRef.current.nodes.find((n) => n.id === rootNodeId);
       if (!rootNode) {
         showToast('Корневая нода не найдена', 'error');
         return;
@@ -325,8 +376,13 @@ Depth: ${params.depth}`;
         return;
       }
 
+      if (mode === 'chatgpt_only' && !isProviderAllowed(allowedProviders, 'openai')) {
+        showToast('Для режима ChatGPT Only включите OpenAI в Allowed providers', 'error');
+        return;
+      }
+
       // Update root node prompt with question
-      setGraph((prev) => ({
+      setGraphSafe((prev) => ({
         ...prev,
         nodes: prev.nodes.map((n) => (n.id === rootNodeId ? { ...n, prompt: resolvedQuestion } : n)),
       }));
@@ -347,13 +403,11 @@ Depth: ${params.depth}`;
           throw new DOMException('Autonomous council aborted', 'AbortError');
         }
 
-        const entryNode = (depth === 0 ? graph.nodes.find((n) => n.id === entryNodeId) : undefined) ??
-          ((): Node | undefined => undefined)();
-
-        const entry = entryNode ?? graph.nodes.find((n) => n.id === entryNodeId) ?? rootNode;
+        const entry = graphRef.current.nodes.find((n) => n.id === entryNodeId) ?? rootNode;
 
         const planned = await planWave({ question: resolvedQuestion, depth });
         const branches = planned.branches
+          .filter((b) => isProviderAllowed(allowedProviders, b.providerId))
           .filter((b) => hasProviderApiKey(providers, b.providerId))
           .slice(0, 5);
 
@@ -382,7 +436,7 @@ Depth: ${params.depth}`;
           };
         });
 
-        setGraph((prev) => ({
+        setGraphSafe((prev) => ({
           ...prev,
           nodes: [...prev.nodes, ...childNodes],
           connections: [...prev.connections, ...connections],
@@ -393,14 +447,15 @@ Depth: ${params.depth}`;
         const branchResults = await Promise.all(
           childNodes.map(async (node, idx) => {
             try {
-              const result = await gateway.query({
+              const request: LLMRequest = {
                 model: node.modelId ?? 'gpt-4o',
                 messages: [{ role: 'user', content: node.prompt || resolvedQuestion }],
-              });
+              };
+              const result: LLMResponse = await gateway.query(request);
 
               const output = result.error ? `⚠️ ${result.error}` : result.content;
 
-              setGraph((prev) => ({
+              setGraphSafe((prev) => ({
                 ...prev,
                 nodes: prev.nodes.map((n) =>
                   n.id === node.id
@@ -433,7 +488,7 @@ Depth: ${params.depth}`;
               return { providerId: (node.providerId ?? 'openai') as ProviderId, modelId: node.modelId ?? 'unknown', content: output };
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : 'Branch error';
-              setGraph((prev) => ({
+              setGraphSafe((prev) => ({
                 ...prev,
                 nodes: prev.nodes.map((n) => (n.id === node.id ? { ...n, isPlaying: false, modelResponse: `⚠️ ${errorMessage}`, error: errorMessage } : n)),
               }));
@@ -447,12 +502,21 @@ Depth: ${params.depth}`;
           ? planned.mergeModel
           : { providerId: branchResults[0]?.providerId ?? 'openai', modelId: branchResults[0]?.modelId ?? 'gpt-4o' };
 
+        const resolvedMergeModel = mode === 'chatgpt_only'
+          ? { providerId: 'openai' as const, modelId: mergeModel.modelId }
+          : mergeModel;
+
+        if (!isProviderAllowed(allowedProviders, resolvedMergeModel.providerId)) {
+          showToast('Merge-провайдер не разрешён (Allowed providers)', 'error');
+          break;
+        }
+
         const mergePrompt = buildMergePrompt(resolvedQuestion, branchResults);
         const { mergeNode, connections: mergeConnections } = createMergeNode({
           wave: depth,
           parent: entry,
           branchNodes: childNodes,
-          mergeModel,
+          mergeModel: resolvedMergeModel,
           question: resolvedQuestion,
           mergePrompt,
         });
@@ -462,7 +526,7 @@ Depth: ${params.depth}`;
           wave: depth,
           inputNodeIds: childNodes.map((n) => n.id),
           outputNodeId: mergeNode.id,
-          providerId: mergeModel.providerId,
+          providerId: resolvedMergeModel.providerId,
           status: 'queued',
         };
 
@@ -474,7 +538,7 @@ Depth: ${params.depth}`;
           };
         });
 
-        setGraph((prev) => ({
+        setGraphSafe((prev) => ({
           ...prev,
           nodes: [...prev.nodes, mergeNode],
           connections: [...prev.connections, ...mergeConnections],
@@ -482,14 +546,15 @@ Depth: ${params.depth}`;
 
         updateMergeStatus(mergePlanItem.id, 'running');
 
-        const mergeResult = await gateway.query({
+        const mergeRequest: LLMRequest = {
           model: mergeNode.modelId ?? 'gpt-4o',
           messages: [{ role: 'user', content: mergePrompt }],
-        });
+        };
+        const mergeResult: LLMResponse = await gateway.query(mergeRequest);
 
         const mergeOutput = mergeResult.error ? `⚠️ ${mergeResult.error}` : mergeResult.content;
 
-        setGraph((prev) => ({
+        setGraphSafe((prev) => ({
           ...prev,
           nodes: prev.nodes.map((n) => (n.id === mergeNode.id ? { ...n, isPlaying: false, modelResponse: mergeOutput, error: mergeResult.error } : n)),
         }));
@@ -501,7 +566,7 @@ Depth: ${params.depth}`;
           stage: 'synthesis',
           agentId: mergeNode.modelId ?? 'merge',
           agentName: 'Chairman',
-          providerId: mergeModel.providerId,
+          providerId: resolvedMergeModel.providerId,
           modelId: mergeNode.modelId ?? 'merge',
           input: 'Синтез ответов',
           output: mergeOutput,
@@ -519,12 +584,13 @@ Depth: ${params.depth}`;
 
       showToast('Autonomous Council: готово', 'success');
     },
-    [gateway, graph.nodes, persistPlan, planWave, providers, setGraph, showToast, updateBranchStatuses, updateMergeStatus]
+    [allowedProviders, gateway, mode, persistPlan, planWave, providers, setGraphSafe, showToast, updateBranchStatuses, updateMergeStatus]
   );
 
   return {
     councilPlan,
     startAutonomousCouncil,
     abortAutonomousCouncil,
+    resetAutonomousCouncil,
   };
 }

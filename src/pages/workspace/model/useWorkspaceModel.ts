@@ -32,7 +32,9 @@ import { getCouncilEngine, getCouncilById, PRESET_COUNCILS } from '@/shared/lib/
 import type { Council, CouncilResult } from '@/entities/council';
 import { autoLayoutNodes, arrangeInGrid } from '@/shared/lib/autoLayout';
 import type { CouncilPlan } from './councilPlanTypes';
-import { useCouncilPlan } from './useCouncilPlan';
+import { useAutonomousCouncil } from './useAutonomousCouncil';
+
+const ALL_PROVIDERS: ProviderId[] = ['openai', 'anthropic', 'google', 'openrouter', 'xai', 'ollama'];
 
 export interface WorkspaceState {
   canvas: CanvasState;
@@ -48,6 +50,8 @@ export interface WorkspaceState {
   // Multi-provider support
   providers: ProviderConfig[];
   selectedCouncilId: string | null;
+  councilMode: 'autonomous' | 'chatgpt_only';
+  allowedProviders: ProviderId[];
   councilPlan: CouncilPlan | null;
 }
 
@@ -86,9 +90,14 @@ export interface WorkspaceModel {
     updateProvider: (config: ProviderConfig) => void;
     testProvider: (providerId: ProviderId) => Promise<boolean>;
     selectCouncil: (councilId: string | null) => void;
+    setCouncilMode: (mode: 'autonomous' | 'chatgpt_only') => void;
+    setAllowedProviders: (providers: ProviderId[]) => void;
     playCouncil: (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void; silent?: boolean }) => Promise<void>;
     playMultiModel: (params: { nodeId: string; models: { modelId: string; providerId: ProviderId }[] }) => Promise<void>;
     startCouncilPlan: (params: { rootNodeId: string; maxDepth: number }) => Promise<void>;
+    startAutonomousCouncil: (params: { rootNodeId: string; question: string; maxDepth: number; onThinkingStep?: (step: CouncilThinkingStep) => void }) => Promise<void>;
+    stopCouncil: () => void;
+    resetCouncil: () => void;
   };
 }
 
@@ -142,6 +151,11 @@ export function useWorkspaceModel(): WorkspaceModel {
   // Multi-provider state
   const [providers, setProviders] = React.useState<ProviderConfig[]>([]);
   const [selectedCouncilId, setSelectedCouncilId] = React.useState<string | null>(null);
+  const [councilMode, setCouncilMode] = React.useState<'autonomous' | 'chatgpt_only'>('autonomous');
+  const [allowedProviders, setAllowedProviders] = React.useState<ProviderId[]>(ALL_PROVIDERS);
+
+  const selectedCouncilByChatIdRef = React.useRef<Map<string, string | null>>(new Map());
+  const allowedProvidersByChatIdRef = React.useRef<Map<string, ProviderId[]>>(new Map());
   
   // LLM Gateway instance
   const gateway = React.useMemo(() => getLLMGateway(), []);
@@ -156,12 +170,13 @@ export function useWorkspaceModel(): WorkspaceModel {
     const bootstrap = async () => {
       try {
         setIsLoading(true);
-        const [storedCanvas, storedModel, storedChatId, existingChats, storedProviders] = await Promise.all([
+        const [storedCanvas, storedModel, storedChatId, existingChats, storedProviders, storedAllowedProvidersByChat] = await Promise.all([
           readSetting<CanvasState | undefined>('canvas_state'),
           readSetting<string | undefined>('settings_model'),
           readSetting<string | undefined>('current_chat_id'),
           readChats(),
           readSetting<ProviderConfig[] | undefined>('providers'),
+          readSetting<Record<string, ProviderId[]> | undefined>('allowed_providers_by_chat'),
         ]);
 
         if (cancelled) return;
@@ -173,6 +188,12 @@ export function useWorkspaceModel(): WorkspaceModel {
         if (storedProviders && storedProviders.length > 0) {
           setProviders(storedProviders);
           storedProviders.forEach(config => gateway.configureProvider(config));
+        }
+
+        if (storedAllowedProvidersByChat) {
+          Object.entries(storedAllowedProvidersByChat).forEach(([chatId, allowed]) => {
+            allowedProvidersByChatIdRef.current.set(chatId, allowed);
+          });
         }
 
         let activeChatId = storedChatId;
@@ -218,6 +239,13 @@ export function useWorkspaceModel(): WorkspaceModel {
 
         setChats(chatList);
         setCurrentChatId(activeChatId || null);
+
+        if (activeChatId) {
+          const storedAllowed = allowedProvidersByChatIdRef.current.get(activeChatId);
+          const resolvedAllowed = storedAllowed && storedAllowed.length > 0 ? storedAllowed : ALL_PROVIDERS;
+          setAllowedProviders(resolvedAllowed);
+          allowedProvidersByChatIdRef.current.set(activeChatId, resolvedAllowed);
+        }
 
         if (activeChatId && chatList.length > 0) {
           const [nodesForChat, connsForChat] = await Promise.all([
@@ -370,11 +398,16 @@ export function useWorkspaceModel(): WorkspaceModel {
     await saveNodesByChat(newChatId, [root]);
     await saveConnectionsByChat(newChatId, []);
     setChats(prev => [newChat, ...prev]);
+
+    selectedCouncilByChatIdRef.current.set(newChatId, null);
+    allowedProvidersByChatIdRef.current.set(newChatId, ALL_PROVIDERS);
+    void saveSetting('allowed_providers_by_chat', Object.fromEntries(allowedProvidersByChatIdRef.current.entries()));
     
     // Switch context
     initGraphHistory({ nodes: [root], connections: [] });
     setCanvas(defaultCanvasState);
     setCurrentChatId(newChatId);
+    setAllowedProviders(ALL_PROVIDERS);
   }, [initGraphHistory]);
 
   const selectChat = useCallback(async (chatId: string) => {
@@ -386,6 +419,14 @@ export function useWorkspaceModel(): WorkspaceModel {
     initGraphHistory({ nodes: nodesForChat, connections: connsForChat });
     setCanvas(defaultCanvasState);
     setCurrentChatId(chatId);
+
+    const councilForChat = selectedCouncilByChatIdRef.current.get(chatId) ?? null;
+    setSelectedCouncilId(councilForChat);
+
+    const allowedForChat = allowedProvidersByChatIdRef.current.get(chatId);
+    const resolvedAllowed = allowedForChat && allowedForChat.length > 0 ? allowedForChat : ALL_PROVIDERS;
+    setAllowedProviders(resolvedAllowed);
+    allowedProvidersByChatIdRef.current.set(chatId, resolvedAllowed);
   }, [currentChatId, initGraphHistory]);
 
   const deleteChatAction = useCallback(async (chatId: string) => {
@@ -926,7 +967,23 @@ export function useWorkspaceModel(): WorkspaceModel {
   
   const selectCouncil = useCallback((councilId: string | null) => {
     setSelectedCouncilId(councilId);
+    if (currentChatId) {
+      selectedCouncilByChatIdRef.current.set(currentChatId, councilId);
+    }
+  }, [currentChatId]);
+
+  const setCouncilModeAction = React.useCallback((mode: 'autonomous' | 'chatgpt_only') => {
+    setCouncilMode(mode);
   }, []);
+
+  const setAllowedProvidersAction = React.useCallback((nextAllowed: ProviderId[]) => {
+    const normalized = nextAllowed.length > 0 ? nextAllowed : ALL_PROVIDERS;
+    setAllowedProviders(normalized);
+    if (currentChatId) {
+      allowedProvidersByChatIdRef.current.set(currentChatId, normalized);
+      void saveSetting('allowed_providers_by_chat', Object.fromEntries(allowedProvidersByChatIdRef.current.entries()));
+    }
+  }, [currentChatId]);
   
   // Council execution
   const playCouncil = useCallback(async (params: { nodeId: string; councilId: string; onThinkingStep?: (step: CouncilThinkingStep) => void; silent?: boolean }) => {
@@ -1062,12 +1119,36 @@ export function useWorkspaceModel(): WorkspaceModel {
     }
   }, [graph.nodes, councilEngine, setGraph, showToast]);
 
-  const { councilPlan, startCouncilPlan } = useCouncilPlan({
+  const { councilPlan, startAutonomousCouncil, abortAutonomousCouncil, resetAutonomousCouncil } = useAutonomousCouncil({
+    chatId: currentChatId,
     graph,
-    selectedCouncilId,
-    playCouncil,
+    providers,
+    gateway,
+    setGraph,
     showToast,
+    mode: councilMode,
+    allowedProviders,
   });
+
+  const startCouncilPlan = useCallback(async (params: { rootNodeId: string; maxDepth: number }) => {
+    await startAutonomousCouncil({
+      rootNodeId: params.rootNodeId,
+      maxDepth: params.maxDepth,
+    });
+  }, [startAutonomousCouncil]);
+
+  React.useEffect(() => {
+    // Abort long-running council orchestration when switching chats.
+    abortAutonomousCouncil();
+  }, [abortAutonomousCouncil, currentChatId]);
+
+  const stopCouncil = React.useCallback(() => {
+    abortAutonomousCouncil();
+  }, [abortAutonomousCouncil]);
+
+  const resetCouncil = React.useCallback(() => {
+    resetAutonomousCouncil();
+  }, [resetAutonomousCouncil]);
 
   // Multi-model branching: each branch uses a different model
   const playMultiModel = useCallback(async (params: { 
@@ -1203,6 +1284,8 @@ export function useWorkspaceModel(): WorkspaceModel {
     canRedo,
     providers,
     selectedCouncilId,
+    councilMode,
+    allowedProviders,
     councilPlan,
   };
 
@@ -1241,9 +1324,16 @@ export function useWorkspaceModel(): WorkspaceModel {
       updateProvider,
       testProvider,
       selectCouncil,
+      setCouncilMode: setCouncilModeAction,
+      setAllowedProviders: setAllowedProvidersAction,
       playCouncil,
       playMultiModel,
       startCouncilPlan,
+      startAutonomousCouncil: async ({ rootNodeId, question, maxDepth, onThinkingStep }) => {
+        await startAutonomousCouncil({ rootNodeId, question, maxDepth, onThinkingStep });
+      },
+      stopCouncil,
+      resetCouncil,
     },
   };
 }

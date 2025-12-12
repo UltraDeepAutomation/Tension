@@ -9,6 +9,7 @@ import type { CouncilPlan, CouncilBranch } from '@/pages/workspace/model/council
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
+  summary?: string;
   content: string;
   timestamp: number;
   providerId?: ProviderId;
@@ -44,6 +45,12 @@ interface ChatPanelProps {
   councils: Council[];
   selectedCouncilId: string | null;
   onSelectCouncil: (councilId: string | null) => void;
+  councilMode: 'autonomous' | 'chatgpt_only';
+  onChangeCouncilMode: (mode: 'autonomous' | 'chatgpt_only') => void;
+  allowedProviders: ProviderId[];
+  onChangeAllowedProviders: (providers: ProviderId[]) => void;
+  onStopCouncil?: () => void;
+  onResetCouncil?: () => void;
   maxDepth: number;
   onChangeMaxDepth: (value: number) => void;
   onStartPlan?: (rootNodeId: string, maxDepth: number) => void;
@@ -71,6 +78,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   councils,
   selectedCouncilId,
   onSelectCouncil,
+  councilMode,
+  onChangeCouncilMode,
+  allowedProviders,
+  onChangeAllowedProviders,
+  onStopCouncil,
+  onResetCouncil,
   maxDepth,
   onChangeMaxDepth,
   onStartPlan,
@@ -100,10 +113,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const startDisabledReason = React.useMemo(() => {
     if (!onStartPlan) return 'Автоплан пока недоступен';
-    if (!selectedCouncilId) return 'Выберите council';
     if (!rootNodeId) return 'Не найдена корневая нода';
     return null;
-  }, [onStartPlan, selectedCouncilId, rootNodeId]);
+  }, [onStartPlan, rootNodeId]);
   const isStartDisabled = !!startDisabledReason;
 
   // Auto-scroll to bottom
@@ -156,7 +168,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   };
 
+  const providerOptions = React.useMemo(() => {
+    const all: ProviderId[] = ['openai', 'anthropic', 'google', 'openrouter', 'xai', 'ollama'];
+    return all.map((id) => ({ id, label: id }));
+  }, []);
+
   if (!isOpen) return null;
+
+  const toggleProvider = (providerId: ProviderId) => {
+    const next = allowedProviders.includes(providerId)
+      ? allowedProviders.filter((p) => p !== providerId)
+      : [...allowedProviders, providerId];
+    onChangeAllowedProviders(next);
+  };
 
   return (
     <div className="chat-panel">
@@ -172,6 +196,39 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
       <div className="chat-panel-content">
         <div className="chat-panel-council-settings">
+          <div className="chat-panel-council-row">
+            <label className="chat-panel-label">Режим</label>
+            <select
+              className="chat-panel-select"
+              value={councilMode}
+              onChange={(e) => onChangeCouncilMode(e.target.value as 'autonomous' | 'chatgpt_only')}
+            >
+              <option value="autonomous">Autonomous</option>
+              <option value="chatgpt_only">ChatGPT Only</option>
+            </select>
+          </div>
+
+          <div className="chat-panel-council-row">
+            <label className="chat-panel-label">API</label>
+            <div className="chat-panel-provider-grid">
+              {providerOptions.map(({ id, label }) => {
+                const checked = allowedProviders.includes(id);
+                const disabled = councilMode === 'chatgpt_only' && id === 'openai' && checked && allowedProviders.length === 1;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`chat-panel-provider-pill ${checked ? 'chat-panel-provider-pill--on' : ''}`}
+                    onClick={() => !disabled && toggleProvider(id)}
+                    title={disabled ? 'OpenAI обязателен для ChatGPT Only' : undefined}
+                  >
+                    <span className="chat-panel-provider-icon">{PROVIDER_ICONS[id]}</span>
+                    <span className="chat-panel-provider-label">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="chat-panel-council-row">
             <label className="chat-panel-label">Council</label>
             <select
@@ -207,6 +264,26 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             >
               Запустить план
             </button>
+            {onStopCouncil && (
+              <button
+                className="chat-panel-button chat-panel-button--danger"
+                onClick={onStopCouncil}
+                disabled={!isThinking}
+                title={!isThinking ? 'Нет активного исполнения' : undefined}
+              >
+                Stop
+              </button>
+            )}
+            {onResetCouncil && (
+              <button
+                className="chat-panel-button chat-panel-button--secondary"
+                onClick={onResetCouncil}
+                disabled={isThinking}
+                title={isThinking ? 'Сначала остановите исполнение' : undefined}
+              >
+                Reset
+              </button>
+            )}
             {isStartDisabled && (
               <span className="chat-panel-hint">{startDisabledReason}</span>
             )}
@@ -345,7 +422,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   <span className="chat-message-time">{formatTime(message.timestamp)}</span>
                 </div>
                 <div className="chat-message-body">
-                  <MarkdownRenderer content={message.content} />
+                  {message.summary ? (
+                    <details className="chat-message-collapsible">
+                      <summary className="chat-message-collapsible__summary">{message.summary}</summary>
+                      <div className="chat-message-collapsible__content">
+                        <MarkdownRenderer content={message.content} />
+                      </div>
+                    </details>
+                  ) : (
+                    <MarkdownRenderer content={message.content} />
+                  )}
                 </div>
                 {message.nodeId && onNavigateToNode && (
                   <button 

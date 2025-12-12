@@ -31,21 +31,89 @@ export const WorkspacePage: React.FC = () => {
   ], []);
   const { state, actions } = useWorkspaceModel();
   const { apiKey, isLoaded, hasKey, updateKey } = useOpenAIKey();
+  const updateProviderRef = React.useRef(actions.updateProvider);
+  const lastSyncedOpenAIKeyRef = React.useRef<string | null>(null);
   const [multiModelSelection, setMultiModelSelection] = React.useState<Set<string>>(
     () => new Set(defaultMultiModels.map((m) => m.modelId))
   );
   const [councilMaxDepth, setCouncilMaxDepth] = React.useState(3);
+  const chatMessagesByChatIdRef = React.useRef<Map<string, ChatMessage[]>>(new Map());
+  const thinkingStepsByChatIdRef = React.useRef<Map<string, ThinkingStep[]>>(new Map());
   const primaryRootNodeId = React.useMemo(() => {
     const rootNode = state.nodes.find((node) => node.isRoot) ?? state.nodes[0];
     return rootNode?.id ?? null;
   }, [state.nodes]);
+
+  React.useEffect(() => {
+    updateProviderRef.current = actions.updateProvider;
+  }, [actions.updateProvider]);
+
+  React.useEffect(() => {
+    if (!isLoaded) return;
+    if (!hasKey || !apiKey) return;
+    if (lastSyncedOpenAIKeyRef.current === apiKey) return;
+    lastSyncedOpenAIKeyRef.current = apiKey;
+    updateProviderRef.current({
+      id: 'openai',
+      name: 'OpenAI',
+      apiKey,
+      isEnabled: true,
+    });
+  }, [apiKey, hasKey, isLoaded]);
+
+  React.useEffect(() => {
+    const chatId = state.currentChatId;
+    if (!chatId) {
+      setChatMessages([]);
+      setThinkingSteps([]);
+      return;
+    }
+
+    setChatMessages(chatMessagesByChatIdRef.current.get(chatId) ?? []);
+    setThinkingSteps(thinkingStepsByChatIdRef.current.get(chatId) ?? []);
+    setIsChatThinking(false);
+  }, [state.currentChatId]);
+
+  React.useEffect(() => {
+    const chatId = state.currentChatId;
+    if (!chatId) return;
+    chatMessagesByChatIdRef.current.set(chatId, chatMessages);
+  }, [chatMessages, state.currentChatId]);
+
+  React.useEffect(() => {
+    const chatId = state.currentChatId;
+    if (!chatId) return;
+    thinkingStepsByChatIdRef.current.set(chatId, thinkingSteps);
+  }, [thinkingSteps, state.currentChatId]);
   const handleStartCouncilPlan = React.useCallback(
     (rootNodeId: string, maxDepth: number) => {
+      const chatId = state.currentChatId;
+      if (chatId) {
+        setThinkingSteps([]);
+        thinkingStepsByChatIdRef.current.set(chatId, []);
+      }
       actions.startCouncilPlan({ rootNodeId, maxDepth });
       setIsChatPanelOpen(true);
     },
-    [actions]
+    [actions, state.currentChatId]
   );
+
+  const handleStopCouncil = React.useCallback(() => {
+    actions.stopCouncil();
+    setIsChatThinking(false);
+  }, [actions]);
+
+  const handleResetCouncil = React.useCallback(() => {
+    const chatId = state.currentChatId;
+    if (chatId) {
+      setChatMessages([]);
+      setThinkingSteps([]);
+      chatMessagesByChatIdRef.current.set(chatId, []);
+      thinkingStepsByChatIdRef.current.set(chatId, []);
+    }
+    actions.resetCouncil();
+    setIsChatThinking(false);
+  }, [actions, state.currentChatId]);
   
   // Tool state management
   const [isSpacePressed, setIsSpacePressed] = React.useState(false);
@@ -199,20 +267,6 @@ export const WorkspacePage: React.FC = () => {
     };
     setChatMessages(prev => [...prev, userMessage]);
 
-    if (!state.selectedCouncilId) {
-      setChatMessages(prev => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: 'Выберите council перед запуском',
-          timestamp: Date.now(),
-          agentName: 'System',
-        },
-      ]);
-      return;
-    }
-
     if (!primaryRootNodeId) {
       setChatMessages(prev => [
         ...prev,
@@ -249,9 +303,10 @@ export const WorkspacePage: React.FC = () => {
     actions.updateNodePrompt(primaryRootNodeId, trimmed);
 
     actions
-      .playCouncil({
-        nodeId: primaryRootNodeId,
-        councilId: state.selectedCouncilId,
+      .startAutonomousCouncil({
+        rootNodeId: primaryRootNodeId,
+        question: trimmed,
+        maxDepth: councilMaxDepth,
         onThinkingStep: (step) => {
           setThinkingSteps((prev) => [...prev, step]);
 
@@ -264,7 +319,7 @@ export const WorkspacePage: React.FC = () => {
               agentName: step.agentName,
               providerId: step.providerId,
               modelId: step.modelId,
-              nodeId: primaryRootNodeId,
+              nodeId: step.nodeId ?? primaryRootNodeId,
             };
             setChatMessages((prev) => [...prev, assistantMessage]);
             setIsChatThinking(false);
@@ -272,7 +327,7 @@ export const WorkspacePage: React.FC = () => {
         },
       })
       .catch((error) => {
-        console.error('chat playCouncil error', error);
+        console.error('chat startAutonomousCouncil error', error);
         setIsChatThinking(false);
         setChatMessages((prev) => [
           ...prev,
@@ -285,7 +340,7 @@ export const WorkspacePage: React.FC = () => {
           },
         ]);
       });
-  }, [actions, primaryRootNodeId, state.nodes, state.selectedCouncilId]);
+  }, [actions, councilMaxDepth, primaryRootNodeId, state.currentChatId, state.nodes, state.selectedCouncilId]);
 
   const commandActions: CommandAction[] = React.useMemo(() => [
     { id: 'new-chat', label: 'Create New Chat', perform: actions.createChat, icon: '➕' },
@@ -350,9 +405,9 @@ export const WorkspacePage: React.FC = () => {
           onPasteNodes={actions.pasteNodes}
           onCenterCanvas={actions.centerCanvas}
           onResetZoom={actions.resetZoom}
-          councilMode={!!state.selectedCouncilId}
-          councilName={state.selectedCouncilId ? getCouncilById(state.selectedCouncilId)?.name : undefined}
-          onPlayCouncil={state.selectedCouncilId ? (nodeId) => {
+          councilMode={true}
+          councilName={state.selectedCouncilId ? getCouncilById(state.selectedCouncilId)?.name : 'Autonomous'}
+          onPlayCouncil={(nodeId) => {
             const node = state.nodes.find((n) => n.id === nodeId);
             const prompt = node?.prompt || node?.context || '';
 
@@ -373,36 +428,33 @@ export const WorkspacePage: React.FC = () => {
 
             setIsChatThinking(true);
 
-            actions
-              .playCouncil({
-                nodeId,
-                councilId: state.selectedCouncilId!,
-                onThinkingStep: (step) => {
-                  // Append thinking step to sidebar
-                  setThinkingSteps((prev) => [...prev, step]);
-
-                  // When synthesis is ready, add final answer as chat message
-                  if (step.stage === 'synthesis') {
-                    const assistantMessage: ChatMessage = {
-                      id: crypto.randomUUID(),
-                      role: 'assistant',
-                      content: step.output,
-                      timestamp: step.timestamp,
-                      agentName: step.agentName,
-                      providerId: step.providerId,
-                      modelId: step.modelId,
-                      nodeId,
-                    };
-                    setChatMessages((prev) => [...prev, assistantMessage]);
-                    setIsChatThinking(false);
-                  }
-                },
-              })
-              .catch((error) => {
-                console.error('playCouncil error', error);
+            const onThinkingStep = (step: ThinkingStep) => {
+              setThinkingSteps((prev) => [...prev, step]);
+              if (step.stage === 'synthesis') {
+                const assistantMessage: ChatMessage = {
+                  id: crypto.randomUUID(),
+                  role: 'assistant',
+                  content: step.output,
+                  timestamp: step.timestamp,
+                  agentName: step.agentName,
+                  providerId: step.providerId,
+                  modelId: step.modelId,
+                  nodeId: step.nodeId ?? nodeId,
+                };
+                setChatMessages((prev) => [...prev, assistantMessage]);
                 setIsChatThinking(false);
-              });
-          } : undefined}
+              }
+            };
+
+            const run = state.selectedCouncilId
+              ? actions.playCouncil({ nodeId, councilId: state.selectedCouncilId, onThinkingStep })
+              : actions.startAutonomousCouncil({ rootNodeId: nodeId, question: prompt, maxDepth: councilMaxDepth, onThinkingStep });
+
+            run.catch((error) => {
+              console.error('Council run error', error);
+              setIsChatThinking(false);
+            });
+          }}
           onPlayMultiModel={(nodeId) => {
             setMultiModelNodeId(nodeId);
             setIsMultiModelOpen(true);
@@ -456,6 +508,7 @@ export const WorkspacePage: React.FC = () => {
           title="Открыть чат с Council"
         >
           <MessageSquare size={18} />
+          <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>Chat</span>
         </button>
         
         {/* Chat Panel */}
@@ -470,6 +523,12 @@ export const WorkspacePage: React.FC = () => {
           councils={PRESET_COUNCILS}
           selectedCouncilId={state.selectedCouncilId}
           onSelectCouncil={actions.selectCouncil}
+          councilMode={state.councilMode}
+          onChangeCouncilMode={actions.setCouncilMode}
+          allowedProviders={state.allowedProviders}
+          onChangeAllowedProviders={actions.setAllowedProviders}
+          onStopCouncil={handleStopCouncil}
+          onResetCouncil={handleResetCouncil}
           maxDepth={councilMaxDepth}
           onChangeMaxDepth={setCouncilMaxDepth}
           rootNodeId={primaryRootNodeId}

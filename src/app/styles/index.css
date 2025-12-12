@@ -3120,17 +3120,19 @@ body {
 /* Chat Toggle Button */
 .chat-toggle-button {
   position: fixed;
-  bottom: 80px;
-  right: 20px;
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-full);
+  bottom: var(--canvas-ui-inset);
+  right: var(--canvas-ui-inset);
+  height: var(--toolbar-height);
+  width: calc(var(--toolbar-height) * 2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-lg);
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
   box-shadow: var(--shadow-lg);
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: var(--space-2);
   cursor: pointer;
   color: var(--color-text-secondary);
   transition: all 0.2s;
@@ -3153,4 +3155,97 @@ body {
 .chat-toggle-button--active:hover {
   background: var(--color-primary-dark);
   transform: scale(1.05);
+}
+
+/* Chat Panel Action Buttons */
+.chat-panel-button--secondary {
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-primary);
+}
+
+.chat-panel-button--secondary:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+
+.chat-panel-button--danger {
+  background: var(--color-danger-soft, rgba(239, 68, 68, 0.12));
+  border: 1px solid var(--color-danger, #ef4444);
+  color: var(--color-danger, #ef4444);
+}
+
+.chat-panel-button--danger:hover:not(:disabled) {
+  background: var(--color-danger, #ef4444);
+  color: white;
+}
+
+.chat-panel-provider-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-panel-provider-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.chat-panel-provider-pill:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.chat-panel-provider-pill--on {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.12));
+}
+
+.chat-panel-provider-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-panel-provider-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.chat-message-collapsible {
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-bg-surface);
+  overflow: hidden;
+}
+
+.chat-message-collapsible__summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  user-select: none;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.chat-message-collapsible__summary::marker {
+  color: var(--color-text-secondary);
+}
+
+.chat-message-collapsible[open] .chat-message-collapsible__summary {
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-bg-hover);
+}
+
+.chat-message-collapsible__content {
+  padding: 10px;
 }
